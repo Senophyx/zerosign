@@ -1721,6 +1721,11 @@ std::string buildSignatureBlob(const MachOSlice& slice, const SignRequest& reque
 // the binary has none yet.
 void growSlice(MachOSlice& slice, uint32_t neededBlobSize) {
     if (slice.linkEditCommandOffset == 0) die("Mach-O file has no __LINKEDIT segment");
+    // The segment has to start inside the file, otherwise the size arithmetic
+    // below would wrap.
+    if (slice.linkEditFileOffset > slice.data.size()) {
+        die("Mach-O file has a __LINKEDIT segment that starts past the end of the file");
+    }
 
     const uint32_t commandEnd = slice.headerSize() + slice.rd32(20);
     // The injected command lives inside the hashed code region, so the code
@@ -1803,6 +1808,22 @@ void signMachOFile(const fs::path& path, const SignRequest& request) {
     image.load(bytes);
 
     for (MachOSlice& slice : image.slices) {
+        // A corrupt code signature command must never be "repaired" by writing
+        // the blob over the Mach-O header or over another part of the image.
+        if (slice.sigCommandOffset != 0) {
+            const uint64_t commandsEnd =
+                static_cast<uint64_t>(slice.headerSize()) + slice.rd32(20);
+            if (slice.codeLimit < commandsEnd) {
+                die("cannot sign '" + path.string() +
+                    "': LC_CODE_SIGNATURE points inside the load commands");
+            }
+            if (static_cast<uint64_t>(slice.codeLimit) + slice.signatureSize >
+                slice.data.size()) {
+                die("cannot sign '" + path.string() +
+                    "': LC_CODE_SIGNATURE extends past the end of the file");
+            }
+        }
+
         SliceSignResult result = SliceSignResult::NeedSpace;
         for (int attempt = 0; attempt < 4 && result == SliceSignResult::NeedSpace; ++attempt) {
             uint32_t needed = 0;
