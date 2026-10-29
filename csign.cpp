@@ -60,6 +60,12 @@ namespace fs = std::filesystem;
 namespace {
 
 // ---------------------------------------------------------------------------
+// Version
+// ---------------------------------------------------------------------------
+
+constexpr char kVersion[] = "1.0";
+
+// ---------------------------------------------------------------------------
 // Error handling
 // ---------------------------------------------------------------------------
 
@@ -2641,6 +2647,7 @@ fs::path certificateDirectory() {
 }
 
 struct SavedCertificate {
+    std::string version;
     std::string name;
     std::string pkey;
     std::string prov;
@@ -2711,6 +2718,7 @@ bool loadSavedCertificate(SavedCertificate& certificate) {
     if (!jsonReadString(contents, "name", certificate.name) || certificate.name.empty()) {
         return false;
     }
+    jsonReadString(contents, "version", certificate.version);
     jsonReadString(contents, "pkey", certificate.pkey);
     jsonReadString(contents, "prov", certificate.prov);
     jsonReadString(contents, "password", certificate.password);
@@ -2723,7 +2731,7 @@ void saveCertificateFile(const SavedCertificate& certificate) {
     fs::create_directories(directory, ec);
 
     std::string json = "{\n";
-    json += "    \"version\": \"1.0\",\n";
+    json += "    \"version\": \"" + jsonEscape(kVersion) + "\",\n";
     json += "    \"certificate\": {\n";
     json += "        \"name\": \"" + jsonEscape(certificate.name) + "\",\n";
     json += "        \"pkey\": \"" + jsonEscape(certificate.pkey) + "\",\n";
@@ -2732,6 +2740,15 @@ void saveCertificateFile(const SavedCertificate& certificate) {
     json += "    }\n";
     json += "}\n";
     writeFile(directory / "csign.json", json);
+}
+
+// Keeps the stored schema version in step with the running binary, so an older
+// file is upgraded the first time this build touches it.
+void refreshSavedCertificateVersion(const SavedCertificate& certificate) {
+    if (certificate.version == kVersion) return;
+    SavedCertificate updated = certificate;
+    updated.version = kVersion;
+    saveCertificateFile(updated);
 }
 
 std::string randomIdentifier() {
@@ -2747,9 +2764,11 @@ std::string randomIdentifier() {
 // Commands
 // ---------------------------------------------------------------------------
 
+void printVersion() { std::printf("csign %s\n", kVersion); }
+
 void printUsage() {
     std::printf(
-        "csign - sign iOS .ipa packages and install them onto a connected device\n"
+        "csign %s - sign and install iOS apps directly to your device\n"
         "\n"
         "Usage:\n"
         "  csign sign <ipa-path> [--pkey <p12>] [--prov <profile>] [--password <pw>]\n"
@@ -2763,7 +2782,9 @@ void printUsage() {
         "  --prov <profile>      provisioning profile (.mobileprovision)\n"
         "  --password <pw>       certificate password (prompted when omitted)\n"
         "  --output <path>       output path (default: <name>-signed.ipa)\n"
-        "  -i, --install         install right after signing\n");
+        "  -i, --install         install right after signing\n"
+        "  -v, --version         print the version and exit\n",
+        kVersion);
 }
 
 struct TempDirectory {
@@ -2853,6 +2874,7 @@ int commandSign(int argc, char** argv) {
 
     SigningIdentity identity;
     identity.load(fs::path(expandHome(pkeyPath)), fs::path(expandHome(provPath)), password);
+    if (usingSaved) refreshSavedCertificateVersion(saved);
 
     TempDirectory temporary;
     const fs::path staging = temporary.path / "payload";
@@ -2994,6 +3016,10 @@ int main(int argc, char** argv) {
         if (command == "install") return commandInstall(argc, argv);
         if (command == "cert") return commandCert(argc, argv);
         if (command == "check") return commandCheck(argc, argv);
+        if (command == "-v" || command == "--version") {
+            printVersion();
+            return 0;
+        }
         if (command == "-h" || command == "--help" || command == "help") {
             printUsage();
             return 0;
