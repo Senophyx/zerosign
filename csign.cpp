@@ -1995,8 +1995,12 @@ std::string embeddedIdentifier(const MachOSlice& slice, const std::string& fallb
 struct BundleSigner {
     SigningIdentity* identity = nullptr;
     bool adhoc = false;
+    // Set once the app's own executable has been signed, so callers can refuse
+    // to report success for a bundle that contains nothing to sign.
+    bool sealedMainExecutable = false;
 
     void signNode(const BundleNode& node) {
+        const bool isRoot = node.relativePath.empty() || node.relativePath == ".";
         std::set<fs::path> nested;
         collectNestedBundleDirs(node, nested);
 
@@ -2044,7 +2048,10 @@ struct BundleSigner {
             writeFile(signatureDir / "CodeResources", codeResources);
         }
 
-        if (node.executable.empty()) return;
+        if (node.executable.empty()) {
+            if (isRoot) die("the app bundle has no CFBundleExecutable");
+            return;
+        }
         // CFBundleExecutable comes from an untrusted Info.plist. It names a
         // file inside the bundle, never a path, so separators are rejected.
         if (node.executable == "." || node.executable == ".." ||
@@ -2058,7 +2065,12 @@ struct BundleSigner {
         }
         fs::path executablePath = node.dir / node.executable;
         std::error_code ec;
-        if (!fs::is_regular_file(executablePath, ec)) return;
+        if (!fs::is_regular_file(executablePath, ec)) {
+            if (isRoot) {
+                die("the app bundle executable '" + node.executable + "' is missing");
+            }
+            return;
+        }
 
         SignRequest request;
         request.identity = identity;
@@ -2071,6 +2083,7 @@ struct BundleSigner {
         request.infoPlistData = node.infoPlist;
         request.codeResourcesData = codeResources;
         signMachOFile(executablePath, request);
+        if (isRoot) sealedMainExecutable = true;
     }
 
     std::string generateCodeResources(const fs::path& bundleDir,
@@ -3092,6 +3105,7 @@ int commandSign(int argc, char** argv) {
     BundleSigner signer;
     signer.identity = &identity;
     signer.signNode(root);
+    if (!signer.sealedMainExecutable) die("the app bundle was not sealed");
 
     createArchive(staging, output);
 
