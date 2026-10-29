@@ -1527,6 +1527,44 @@ struct SigningIdentity {
         }
         ASN1_OBJECT_free(hashListOid);
 
+        // Attribute 1.2.840.113635.100.9.2 carries the full digest of the signed
+        // code directory as SET { SEQUENCE { OID sha256, OCTET STRING digest } }.
+        {
+            const std::string& digest = primarySha256;
+            static const unsigned char kSha256Oid[] = {0x60, 0x86, 0x48, 0x01, 0x65,
+                                                       0x03, 0x04, 0x02, 0x01};
+            static const unsigned char kAttributeOid[] = {0x2a, 0x86, 0x48, 0x86, 0xf7,
+                                                          0x63, 0x64, 0x09, 0x02};
+            std::string sequenceContent;
+            derAppend(sequenceContent, 0x06,
+                      std::string(reinterpret_cast<const char*>(kSha256Oid), sizeof(kSha256Oid)));
+            derAppend(sequenceContent, 0x04, digest);
+
+            std::string sequence;
+            derAppend(sequence, 0x30, sequenceContent);
+            std::string attributeSet;
+            derAppend(attributeSet, 0x31, sequence);
+            std::string attributeContent;
+            derAppend(attributeContent, 0x06,
+                      std::string(reinterpret_cast<const char*>(kAttributeOid),
+                                  sizeof(kAttributeOid)));
+            attributeContent += attributeSet;
+            std::string attributeDer;
+            derAppend(attributeDer, 0x30, attributeContent);
+
+            const unsigned char* cursor =
+                reinterpret_cast<const unsigned char*>(attributeDer.data());
+            X509_ATTRIBUTE* attribute =
+                d2i_X509_ATTRIBUTE(nullptr, &cursor, static_cast<long>(attributeDer.size()));
+            // CMS_signed_add1_attr takes ownership on success.
+            if (attribute == nullptr || CMS_signed_add1_attr(signer, attribute) != 1) {
+                X509_ATTRIBUTE_free(attribute);
+                CMS_ContentInfo_free(cms);
+                BIO_free(content);
+                die("cannot attach the cdhash attribute");
+            }
+        }
+
         if (CMS_final(cms, content, nullptr, flags) != 1) {
             CMS_ContentInfo_free(cms);
             BIO_free(content);
@@ -1615,16 +1653,15 @@ std::string buildSignatureBlob(const MachOSlice& slice, const SignRequest& reque
         return hashes;
     };
 
+    // A SHA256 code directory is what current Apple tooling emits, and it is the
+    // one the CMS signature covers.
     const std::string primary = buildCodeDirectory(
-        false, slice, request.identifier, identity.teamId, specialHashesFor(false),
-        execSegFlags, request.adhoc);
-    const std::string alternate = buildCodeDirectory(
         true, slice, request.identifier, identity.teamId, specialHashesFor(true),
         execSegFlags, request.adhoc);
 
     std::string cmsBlob;
     if (!request.adhoc) {
-        const std::string cms = identity.buildCmsSignature(primary, alternate);
+        const std::string cms = identity.buildCmsSignature(primary, std::string());
         uint32_t magic = swap32(kCsMagicBlobWrapper);
         uint32_t length = swap32(static_cast<uint32_t>(cms.size()) + 8);
         cmsBlob.append(reinterpret_cast<const char*>(&magic), sizeof(magic));
@@ -1639,7 +1676,6 @@ std::string buildSignatureBlob(const MachOSlice& slice, const SignRequest& reque
     if (!derEntitlementsBlob.empty()) {
         blobs.emplace_back(kCsSlotDerEntitlements, derEntitlementsBlob);
     }
-    blobs.emplace_back(kCsSlotAlternateCodeDirectories, alternate);
     if (!cmsBlob.empty()) blobs.emplace_back(kCsSlotSignature, cmsBlob);
 
     const uint32_t headerLength =
