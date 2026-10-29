@@ -1274,6 +1274,11 @@ struct SigningIdentity {
     plist_t entitlements = nullptr;
     std::string profileData;
 
+    SigningIdentity() = default;
+    // Owns raw OpenSSL and plist handles; copying would free them twice.
+    SigningIdentity(const SigningIdentity&) = delete;
+    SigningIdentity& operator=(const SigningIdentity&) = delete;
+
     ~SigningIdentity() {
         // The leaf certificate is tracked in owned, so it is released there.
         for (X509* cert : chain) X509_free(cert);
