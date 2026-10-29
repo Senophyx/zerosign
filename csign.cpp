@@ -3039,6 +3039,9 @@ void installIpa(const fs::path& ipaPath, const std::string& label) {
         die("timed out waiting for the installation to finish");
     }
 
+    // Best effort: the staged package is no longer needed once installed.
+    afc_remove_path(session.afc, staging.c_str());
+
     std::printf("\n%s successfully installed to %s\n", label.c_str(), session.name.c_str());
 }
 
