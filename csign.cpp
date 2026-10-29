@@ -2062,7 +2062,10 @@ struct BundleSigner {
         SignRequest request;
         request.identity = identity;
         request.adhoc = adhoc;
-        request.mainExecutable = true;
+        // Entitlements belong to the app itself. An app extension is a separate
+        // process with its own bundle identifier, and the single profile loaded
+        // here cannot authorize it, so it is sealed like any other nested code.
+        request.mainExecutable = node.relativePath.empty() || node.relativePath == ".";
         request.identifier = node.bundleId.empty() ? node.executable : node.bundleId;
         request.infoPlistData = node.infoPlist;
         request.codeResourcesData = codeResources;
