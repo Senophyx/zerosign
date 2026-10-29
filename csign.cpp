@@ -1907,13 +1907,21 @@ struct BundleNode {
     std::vector<BundleNode> children;
 };
 
+bool endsWithIgnoreCase(const std::string& text, const std::string& suffix) {
+    if (text.size() <= suffix.size()) return false;
+    const size_t offset = text.size() - suffix.size();
+    for (size_t i = 0; i < suffix.size(); ++i) {
+        const unsigned char left = static_cast<unsigned char>(text[offset + i]);
+        const unsigned char right = static_cast<unsigned char>(suffix[i]);
+        if (std::tolower(left) != std::tolower(right)) return false;
+    }
+    return true;
+}
+
 bool hasBundleSuffix(const std::string& name) {
     static const char* const kSuffixes[] = {".app", ".appex", ".framework", ".xctest"};
     for (const char* suffix : kSuffixes) {
-        const size_t length = std::strlen(suffix);
-        if (name.size() > length && name.compare(name.size() - length, length, suffix) == 0) {
-            return true;
-        }
+        if (endsWithIgnoreCase(name, suffix)) return true;
     }
     return false;
 }
@@ -2074,9 +2082,8 @@ struct BundleSigner {
         // seal is generated. Without it the device cannot authorize the
         // entitlements, so the app installs but is killed the moment it starts.
         // Extensions carry no entitlements here, so they get no profile either.
-        const std::string bundleExtension = fs::path(node.relativePath).extension().string();
         const bool isAppBundle = node.relativePath.empty() || node.relativePath == "." ||
-                                 bundleExtension == ".app";
+                                 endsWithIgnoreCase(node.relativePath, ".app");
         if (identity != nullptr && !identity->profileData.empty() && isAppBundle) {
             writeFile(node.dir / "embedded.mobileprovision", identity->profileData);
         }
@@ -2756,8 +2763,7 @@ IpaInfo inspectIpa(const fs::path& ipaPath) {
         const size_t slash = entryName.find('/', 8);
         if (slash == std::string::npos) continue;
         const std::string candidate = entryName.substr(0, slash);
-        if (candidate.size() > 4 &&
-            candidate.compare(candidate.size() - 4, 4, ".app") == 0) {
+        if (endsWithIgnoreCase(candidate, ".app")) {
             info.appDirectory = candidate;
             break;
         }
@@ -3310,7 +3316,7 @@ int commandSign(int argc, char** argv) {
         if (!fs::is_directory(payload, ec)) die("the .ipa has no Payload directory");
         for (fs::directory_iterator it(payload, ec), end; !ec && it != end; it.increment(ec)) {
             const std::string name = it->path().filename().string();
-            if (name.size() > 4 && name.compare(name.size() - 4, 4, ".app") == 0) {
+            if (endsWithIgnoreCase(name, ".app")) {
                 appBundle = it->path();
                 break;
             }
