@@ -3165,7 +3165,7 @@ void printUsage() {
         "  --pkey <p12>          signing certificate (.p12)\n"
         "  --prov <profile>      provisioning profile (.mobileprovision)\n"
         "  --password <pw>       certificate password (prompted when omitted)\n"
-        "  --output <path>       output path (default: <name>-signed.ipa)\n"
+        "  -o, --output <path>   output path (default: <name>-signed.ipa)\n"
         "  -i, --install         install right after signing\n"
         "  -v, --version         print the version and exit\n",
         kVersion);
