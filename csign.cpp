@@ -2105,12 +2105,16 @@ struct BundleSigner {
             const std::string hash256 = sha256(contents);
 
             const bool isLocalized = relative.find(".lproj/") != std::string::npos;
+            static const std::string kLocVersionSuffix = ".lproj/locversion.plist";
             const bool isLocVersion =
-                relative.size() >= 20 &&
-                relative.compare(relative.size() - 20, 20, ".lproj/locversion.plist") == 0;
+                relative.size() >= kLocVersionSuffix.size() &&
+                relative.compare(relative.size() - kLocVersionSuffix.size(),
+                                 kLocVersionSuffix.size(), kLocVersionSuffix) == 0;
             const std::string baseName = fs::path(relative).filename().string();
+            // Mirrors the rules2 table below, which marks these as omitted.
             const bool omitFromV2 =
-                baseName == ".DS_Store" || relative == "Info.plist" || relative == "PkgInfo";
+                baseName == ".DS_Store" || relative == "Info.plist" || relative == "PkgInfo" ||
+                isLocVersion;
 
             // Both resource directories store raw digests as data blobs.
             if (!isLocVersion) {
