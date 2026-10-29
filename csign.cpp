@@ -1264,8 +1264,9 @@ struct SigningIdentity {
     std::string profileData;
 
     ~SigningIdentity() {
+        // The leaf certificate is tracked in owned, so it is released there.
+        for (X509* cert : chain) X509_free(cert);
         for (X509* cert : owned) X509_free(cert);
-        if (leaf != nullptr) X509_free(leaf);
         if (key != nullptr) EVP_PKEY_free(key);
         if (entitlements != nullptr) plist_free(entitlements);
     }
@@ -1372,10 +1373,10 @@ struct SigningIdentity {
         owned.push_back(cert);
 
         if (caCerts != nullptr) {
+            // sk_X509_free releases only the stack; ownership of each
+            // certificate moves to owned, so no extra reference is taken.
             for (int i = 0; i < sk_X509_num(caCerts); ++i) {
-                X509* candidate = sk_X509_value(caCerts, i);
-                X509_up_ref(candidate);
-                owned.push_back(candidate);
+                owned.push_back(sk_X509_value(caCerts, i));
             }
             sk_X509_free(caCerts);
         }
