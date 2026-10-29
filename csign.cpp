@@ -2909,6 +2909,11 @@ void installStatusCallback(plist_t command, plist_t status, void* userData) {
 void installIpa(const fs::path& ipaPath, const std::string& label) {
     const IpaInfo info = inspectIpa(ipaPath);
 
+    // Declared before the session so it outlives it: the installation proxy
+    // keeps a status thread that writes here until the session is closed.
+    InstallProgress progress;
+    progress.label = label;
+
     DeviceSession session;
     session.open();
     session.startInstallProxy();
@@ -2929,8 +2934,6 @@ void installIpa(const fs::path& ipaPath, const std::string& label) {
 
     session.uploadFile(ipaPath, staging);
 
-    InstallProgress progress;
-    progress.label = label;
     progress.device = session.name;
 
     plist_t options = instproxy_client_options_new();
