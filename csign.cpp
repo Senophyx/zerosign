@@ -3378,9 +3378,16 @@ int commandCert(int argc, char** argv) {
     saveCertificateFile(certificate);
 
     if (hasPrevious) {
+        // Paths come from the stored file, so only remove what really lives in
+        // the certificate directory.
+        std::error_code resolveError;
+        const fs::path resolvedDirectory = fs::weakly_canonical(directory, resolveError);
         for (const std::string& oldPath : {previous.pkey, previous.prov}) {
             const fs::path expanded(expandHome(oldPath));
             if (expanded == pkeyTarget || expanded == provTarget) continue;
+            std::error_code entryError;
+            const fs::path resolved = fs::weakly_canonical(expanded, entryError);
+            if (entryError || !pathIsWithin(resolvedDirectory, resolved)) continue;
             std::error_code removeError;
             fs::remove(expanded, removeError);
         }
