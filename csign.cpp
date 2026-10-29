@@ -889,20 +889,23 @@ struct MachOSlice {
                     const uint32_t nsects = rd32(cursor + (segment64 ? 64 : 48));
                     const size_t sectionSize = segment64 ? 80 : 68;
                     size_t sectionOffset = cursor + (segment64 ? 72 : 56);
+                    const uint32_t commandsEnd = headerSize() + sizeofcmds;
+                    uint32_t firstSectionOffset = 0;
                     for (uint32_t s = 0; s < nsects; ++s) {
                         if (sectionOffset + sectionSize > data.size()) break;
                         const char* sectName =
                             reinterpret_cast<const char*>(data.data() + sectionOffset);
-                        if (std::strncmp(sectName, "__text", 16) == 0) {
-                            const uint32_t fileOffset =
-                                rd32(sectionOffset + (segment64 ? 48 : 40));
-                            const uint32_t commandsEnd = headerSize() + sizeofcmds;
-                            if (fileOffset > commandsEnd) {
-                                loadCommandsFreeSpace = fileOffset - commandsEnd;
-                            }
-                        } else if (std::strncmp(sectName, "__info_plist", 16) == 0) {
-                            const uint32_t fileOffset =
-                                rd32(sectionOffset + (segment64 ? 48 : 40));
+                        const uint32_t fileOffset =
+                            rd32(sectionOffset + (segment64 ? 48 : 40));
+
+                        // The load command area ends where the first section
+                        // starts, whichever section that happens to be.
+                        if (fileOffset > commandsEnd &&
+                            (firstSectionOffset == 0 || fileOffset < firstSectionOffset)) {
+                            firstSectionOffset = fileOffset;
+                        }
+
+                        if (std::strncmp(sectName, "__info_plist", 16) == 0) {
                             const uint64_t size =
                                 segment64 ? rd64(sectionOffset + 40) : rd32(sectionOffset + 36);
                             if (fileOffset + size <= data.size()) {
@@ -912,6 +915,9 @@ struct MachOSlice {
                             }
                         }
                         sectionOffset += sectionSize;
+                    }
+                    if (firstSectionOffset != 0) {
+                        loadCommandsFreeSpace = firstSectionOffset - commandsEnd;
                     }
                 } else if (isLinkEdit) {
                     linkEditCommandOffset = static_cast<uint32_t>(cursor);
