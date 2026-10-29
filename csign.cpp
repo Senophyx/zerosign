@@ -2499,12 +2499,15 @@ struct DeviceSession {
 struct InstallProgress {
     std::string label;
     std::string device;
+    std::mutex mutex;
     bool completed = false;
     bool failed = false;
     std::string error;
 };
 
+// Runs on the installation proxy's status thread.
 void installStatusCallback(plist_t command, plist_t status, void* userData) {
+    (void)command;
     InstallProgress* progress = static_cast<InstallProgress*>(userData);
     if (progress == nullptr || status == nullptr) return;
 
@@ -2512,15 +2515,16 @@ void installStatusCallback(plist_t command, plist_t status, void* userData) {
     char* errorDescription = nullptr;
     uint64_t errorCode = 0;
     instproxy_status_get_error(status, &errorName, &errorDescription, &errorCode);
+    (void)errorCode;
 
     if (errorName != nullptr) {
+        std::lock_guard<std::mutex> lock(progress->mutex);
         progress->failed = true;
-        std::string message = errorName;
+        progress->error = errorName;
         if (errorDescription != nullptr) {
-            message += ": ";
-            message += errorDescription;
+            progress->error += ": ";
+            progress->error += errorDescription;
         }
-        progress->error = message;
         std::free(errorName);
         std::free(errorDescription);
         return;
@@ -2528,10 +2532,8 @@ void installStatusCallback(plist_t command, plist_t status, void* userData) {
 
     char* statusName = nullptr;
     instproxy_status_get_name(status, &statusName);
-    if (statusName != nullptr) {
-        if (std::strcmp(statusName, "Complete") == 0) progress->completed = true;
-        std::free(statusName);
-    }
+    const bool complete = statusName != nullptr && std::strcmp(statusName, "Complete") == 0;
+    std::free(statusName);
 
     int percent = -1;
     instproxy_status_get_percent_complete(status, &percent);
@@ -2539,6 +2541,11 @@ void installStatusCallback(plist_t command, plist_t status, void* userData) {
         std::printf("\rInstalling %s to %s: %d%%", progress->label.c_str(),
                     progress->device.c_str(), percent);
         std::fflush(stdout);
+    }
+
+    if (complete) {
+        std::lock_guard<std::mutex> lock(progress->mutex);
+        progress->completed = true;
     }
 }
 
@@ -2579,14 +2586,36 @@ void installIpa(const fs::path& ipaPath, const std::string& label) {
                           &progress);
     instproxy_client_options_free(options);
 
-    if (progress.failed) {
-        std::printf("\n");
-        die("installation failed: " + progress.error);
-    }
     if (installError != INSTPROXY_E_SUCCESS) {
         std::printf("\n");
         die("installation failed (installation proxy error " +
             std::to_string(static_cast<int>(installError)) + ")");
+    }
+
+    // A status callback switches the installation proxy into asynchronous mode,
+    // so the result has to be collected from the status thread.
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::minutes(15);
+    bool completed = false;
+    bool failed = false;
+    std::string error;
+    while (std::chrono::steady_clock::now() < deadline) {
+        {
+            std::lock_guard<std::mutex> lock(progress.mutex);
+            completed = progress.completed;
+            failed = progress.failed;
+            error = progress.error;
+        }
+        if (completed || failed) break;
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    }
+
+    if (failed) {
+        std::printf("\n");
+        die("installation failed: " + error);
+    }
+    if (!completed) {
+        std::printf("\n");
+        die("timed out waiting for the installation to finish");
     }
 
     std::printf("\n%s successfully installed to %s\n", label.c_str(), session.name.c_str());
