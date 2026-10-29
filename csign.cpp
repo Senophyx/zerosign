@@ -1877,6 +1877,9 @@ void signMachOFile(const fs::path& path, const SignRequest& request) {
             result = signSlice(slice, request, needed);
             if (result == SliceSignResult::NeedSpace) growSlice(slice, needed);
         }
+        if (result == SliceSignResult::Failed) {
+            die("cannot sign '" + path.string() + "': the Mach-O image could not be read");
+        }
         if (result != SliceSignResult::Ok) {
             die("cannot sign '" + path.string() + "': not enough room for the code signature");
         }
