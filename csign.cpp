@@ -613,6 +613,19 @@ std::string readLine() {
     return line;
 }
 
+std::string trimmed(const std::string& value) {
+    size_t begin = value.find_first_not_of(" \t\r\n");
+    if (begin == std::string::npos) return std::string();
+    size_t end = value.find_last_not_of(" \t\r\n");
+    return value.substr(begin, end - begin + 1);
+}
+
+std::string promptLine(const std::string& label) {
+    std::fputs(label.c_str(), stdout);
+    std::fflush(stdout);
+    return readLine();
+}
+
 // Reads a line from the terminal without echoing it back.
 std::string promptHidden(const std::string& label) {
     std::fputs(label.c_str(), stdout);
@@ -2608,6 +2621,119 @@ void installIpa(const fs::path& ipaPath, const std::string& label) {
 }
 
 // ---------------------------------------------------------------------------
+// Saved certificate store (~/.csign)
+// ---------------------------------------------------------------------------
+
+fs::path certificateDirectory() {
+    const char* home = std::getenv("HOME");
+    if (home == nullptr) die("HOME is not set");
+    return fs::path(home) / ".csign";
+}
+
+struct SavedCertificate {
+    std::string name;
+    std::string pkey;
+    std::string prov;
+    std::string password;
+};
+
+std::string jsonEscape(const std::string& value) {
+    std::string out;
+    for (char c : value) {
+        switch (c) {
+            case '"': out += "\\\""; break;
+            case '\\': out += "\\\\"; break;
+            case '\n': out += "\\n"; break;
+            case '\r': out += "\\r"; break;
+            case '\t': out += "\\t"; break;
+            default: out.push_back(c);
+        }
+    }
+    return out;
+}
+
+bool jsonReadString(const std::string& source, const std::string& key, std::string& out) {
+    const std::string needle = "\"" + key + "\"";
+    size_t position = 0;
+    while ((position = source.find(needle, position)) != std::string::npos) {
+        size_t cursor = position + needle.size();
+        while (cursor < source.size() && std::isspace(static_cast<unsigned char>(source[cursor]))) {
+            ++cursor;
+        }
+        if (cursor >= source.size() || source[cursor] != ':') {
+            position = cursor;
+            continue;
+        }
+        ++cursor;
+        while (cursor < source.size() && std::isspace(static_cast<unsigned char>(source[cursor]))) {
+            ++cursor;
+        }
+        if (cursor >= source.size() || source[cursor] != '"') {
+            position = cursor;
+            continue;
+        }
+        ++cursor;
+        std::string value;
+        while (cursor < source.size() && source[cursor] != '"') {
+            if (source[cursor] == '\\' && cursor + 1 < source.size()) {
+                const char escaped = source[cursor + 1];
+                switch (escaped) {
+                    case 'n': value.push_back('\n'); break;
+                    case 'r': value.push_back('\r'); break;
+                    case 't': value.push_back('\t'); break;
+                    default: value.push_back(escaped); break;
+                }
+                cursor += 2;
+            } else {
+                value.push_back(source[cursor]);
+                ++cursor;
+            }
+        }
+        out = value;
+        return true;
+    }
+    return false;
+}
+
+bool loadSavedCertificate(SavedCertificate& certificate) {
+    std::string contents;
+    if (!readFileIfExists(certificateDirectory() / "csign.json", contents)) return false;
+    if (!jsonReadString(contents, "name", certificate.name) || certificate.name.empty()) {
+        return false;
+    }
+    jsonReadString(contents, "pkey", certificate.pkey);
+    jsonReadString(contents, "prov", certificate.prov);
+    jsonReadString(contents, "password", certificate.password);
+    return !certificate.pkey.empty() && !certificate.prov.empty();
+}
+
+void saveCertificateFile(const SavedCertificate& certificate) {
+    const fs::path directory = certificateDirectory();
+    std::error_code ec;
+    fs::create_directories(directory, ec);
+
+    std::string json = "{\n";
+    json += "    \"version\": \"1.0\",\n";
+    json += "    \"certificate\": {\n";
+    json += "        \"name\": \"" + jsonEscape(certificate.name) + "\",\n";
+    json += "        \"pkey\": \"" + jsonEscape(certificate.pkey) + "\",\n";
+    json += "        \"prov\": \"" + jsonEscape(certificate.prov) + "\",\n";
+    json += "        \"password\": \"" + jsonEscape(certificate.password) + "\"\n";
+    json += "    }\n";
+    json += "}\n";
+    writeFile(directory / "csign.json", json);
+}
+
+std::string randomIdentifier() {
+    static const char kAlphabet[] = "abcdefghijklmnopqrstuvwxyz0123456789";
+    std::string out;
+    out.reserve(8);
+    std::srand(static_cast<unsigned int>(std::time(nullptr)) ^ static_cast<unsigned int>(getpid()));
+    for (int i = 0; i < 8; ++i) out.push_back(kAlphabet[std::rand() % (sizeof(kAlphabet) - 1)]);
+    return out;
+}
+
+// ---------------------------------------------------------------------------
 // Commands
 // ---------------------------------------------------------------------------
 
@@ -2619,6 +2745,7 @@ void printUsage() {
         "  csign sign <ipa-path> [--pkey <p12>] [--prov <profile>] [--password <pw>]\n"
         "                        [--output <path>] [-i]\n"
         "  csign install <ipa-path>\n"
+        "  csign cert\n"
         "\n"
         "Options:\n"
         "  --pkey <p12>          signing certificate (.p12)\n"
@@ -2752,6 +2879,71 @@ int commandInstall(int argc, char** argv) {
     return 0;
 }
 
+int commandCert(int argc, char** argv) {
+    (void)argc;
+    (void)argv;
+
+    const fs::path directory = certificateDirectory();
+    std::error_code ec;
+    fs::create_directories(directory, ec);
+
+    SavedCertificate previous;
+    const bool hasPrevious = loadSavedCertificate(previous);
+    if (hasPrevious) {
+        std::printf(
+            "There is already a certificate saved named \"%s\", do you want to replace it? "
+            "(y/n) > ",
+            previous.name.c_str());
+        std::fflush(stdout);
+        const std::string answer = trimmed(readLine());
+        if (answer != "y" && answer != "Y" && answer != "yes" && answer != "YES" &&
+            answer != "Yes") {
+            return 0;
+        }
+    }
+
+    const std::string pkeyInput = trimmed(promptLine("Input .p12 file : "));
+    if (pkeyInput.empty()) die("no .p12 file given");
+    const std::string provInput = trimmed(promptLine("Input .mobileprovision file : "));
+    if (provInput.empty()) die("no .mobileprovision file given");
+    const std::string password = promptHidden("Input password : ");
+    std::string name = trimmed(promptLine(
+        "Name (for identification only, leave it blank if you want it random) : "));
+    if (name.empty()) name = randomIdentifier();
+
+    const fs::path pkeySource(expandHome(pkeyInput));
+    const fs::path provSource(expandHome(provInput));
+    if (!fs::is_regular_file(pkeySource)) die("cannot find '" + pkeyInput + "'");
+    if (!fs::is_regular_file(provSource)) die("cannot find '" + provInput + "'");
+
+    // Validate before touching anything in ~/.csign.
+    SigningIdentity identity;
+    identity.load(pkeySource, provSource, password);
+
+    const fs::path pkeyTarget = directory / (name + ".p12");
+    const fs::path provTarget = directory / (name + ".mobileprovision");
+    writeFile(pkeyTarget, readFile(pkeySource));
+    writeFile(provTarget, readFile(provSource));
+
+    SavedCertificate certificate;
+    certificate.name = name;
+    certificate.pkey = "~/.csign/" + name + ".p12";
+    certificate.prov = "~/.csign/" + name + ".mobileprovision";
+    certificate.password = password;
+    saveCertificateFile(certificate);
+
+    if (hasPrevious) {
+        for (const std::string& oldPath : {previous.pkey, previous.prov}) {
+            const fs::path expanded(expandHome(oldPath));
+            if (expanded == pkeyTarget || expanded == provTarget) continue;
+            std::error_code removeError;
+            fs::remove(expanded, removeError);
+        }
+    }
+
+    std::printf("\nSuccess! Saved to ~/.csign/\n");
+    return 0;
+}
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -2763,6 +2955,7 @@ int main(int argc, char** argv) {
         const std::string command = argv[1];
         if (command == "sign") return commandSign(argc, argv);
         if (command == "install") return commandInstall(argc, argv);
+        if (command == "cert") return commandCert(argc, argv);
         if (command == "-h" || command == "--help" || command == "help") {
             printUsage();
             return 0;
