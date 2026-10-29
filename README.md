@@ -130,7 +130,9 @@ Bundle Id : com.test.app
 Signed : False
 ```
 
-The name comes from `CFBundleDisplayName`, falling back to `CFBundleName` and then `CFBundleExecutable`. The version comes from `CFBundleShortVersionString`, falling back to `CFBundleVersion`. `Signed` is `True` only when the bundle carries `_CodeSignature/CodeResources` and the main executable has a code signature with a populated signature blob.
+The name comes from `CFBundleDisplayName`, falling back to `CFBundleName` and then `CFBundleExecutable`. The version comes from `CFBundleShortVersionString`, falling back to `CFBundleVersion`.
+
+`Signed` is `True` only when the signature actually verifies: the bundle carries `_CodeSignature/CodeResources`, the main executable has a code signature with a CMS blob, every code page hash in the code directory matches, and every file listed in `CodeResources` still matches its recorded digest. Editing any sealed file flips the result to `False`.
 
 ## Saved certificate
 
@@ -176,16 +178,16 @@ For every code bundle in the package, csign:
 
 1. Signs nested code first, deepest bundles outward, so the outer seal hashes final bytes.
 2. Signs loose Mach-O files inside the bundle.
-3. Writes a matching `embedded.mobileprovision` when the bundle identifier fits the profile.
-4. Generates `_CodeSignature/CodeResources` with SHA-1 and SHA-256 digests of every sealed file.
+3. Writes the profile to `embedded.mobileprovision` in every `.app` bundle.
+4. Generates `_CodeSignature/CodeResources` with SHA-1 and SHA-256 digests of every sealed file, and records symbolic links by target.
 5. Signs the bundle executable last, sealing the `Info.plist` and `CodeResources` digests into the code directory.
 
 Each Mach-O image gets an embedded `SuperBlob` containing:
 
-- a SHA-1 `CodeDirectory` and a SHA-256 alternate,
+- a single SHA-256 `CodeDirectory`,
 - the designated requirement,
-- the entitlements, in both plist and DER form,
-- a CMS signature over the primary code directory, carrying the Apple intermediate and root certificates.
+- the entitlements, in both plist and DER form, on the app executable only,
+- a CMS signature over the code directory, carrying the Apple intermediate and root certificates.
 
 If a binary has no room for a larger signature, csign grows the `__LINKEDIT` segment and injects or resizes `LC_CODE_SIGNATURE`. Universal binaries are rebuilt with each slice re-aligned and the fat header updated.
 
