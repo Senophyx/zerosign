@@ -2963,7 +2963,9 @@ void installIpa(const fs::path& ipaPath, const std::string& label) {
 
     char** entries = nullptr;
     if (afc_get_file_info(session.afc, "PublicStaging", &entries) != AFC_E_SUCCESS) {
-        afc_make_directory(session.afc, "PublicStaging");
+        if (afc_make_directory(session.afc, "PublicStaging") != AFC_E_SUCCESS) {
+            die("cannot create the staging directory on the device");
+        }
     }
     if (entries != nullptr) {
         for (int i = 0; entries[i] != nullptr; ++i) std::free(entries[i]);
