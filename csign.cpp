@@ -855,7 +855,7 @@ struct MachOSlice {
 
     bool parse() {
         parsed = false;
-        if (data.size() < 28) return false;
+        if (data.size() < 4) return false;
 
         const uint32_t magic = readBe32(data.data());
         if (magic == kMachMagic || magic == kMachMagic64) {
@@ -866,6 +866,8 @@ struct MachOSlice {
             return false;
         }
         is64 = (magic == kMachMagic64 || magic == kMachCigam64);
+
+        if (data.size() < headerSize()) return false;
 
         const uint32_t ncmds = rd32(16);
         const uint32_t sizeofcmds = rd32(20);
@@ -880,6 +882,11 @@ struct MachOSlice {
 
             if (cmd == kLcSegment || cmd == kLcSegment64) {
                 const bool segment64 = (cmd == kLcSegment64);
+                // Every field read below is inside the fixed part of the
+                // command, so the command has to be at least that long.
+                const uint32_t fixedSize = segment64 ? 72 : 56;
+                if (cmdsize < fixedSize) return false;
+
                 const char* name = reinterpret_cast<const char*>(data.data() + cursor + 8);
                 const bool isText = std::strncmp(name, "__TEXT", 16) == 0;
                 const bool isLinkEdit = std::strncmp(name, "__LINKEDIT", 16) == 0;
@@ -888,11 +895,14 @@ struct MachOSlice {
                     textVmSize = segment64 ? rd64(cursor + 32) : rd32(cursor + 28);
                     const uint32_t nsects = rd32(cursor + (segment64 ? 64 : 48));
                     const size_t sectionSize = segment64 ? 80 : 68;
-                    size_t sectionOffset = cursor + (segment64 ? 72 : 56);
+                    // The declared sections must fit inside the command.
+                    if (static_cast<uint64_t>(nsects) * sectionSize + fixedSize > cmdsize) {
+                        return false;
+                    }
+                    size_t sectionOffset = cursor + fixedSize;
                     const uint32_t commandsEnd = headerSize() + sizeofcmds;
                     uint32_t firstSectionOffset = 0;
                     for (uint32_t s = 0; s < nsects; ++s) {
-                        if (sectionOffset + sectionSize > data.size()) break;
                         const char* sectName =
                             reinterpret_cast<const char*>(data.data() + sectionOffset);
                         const uint32_t fileOffset =
@@ -932,6 +942,7 @@ struct MachOSlice {
                     }
                 }
             } else if (cmd == kLcCodeSignature) {
+                if (cmdsize < 16) return false;
                 sigCommandOffset = static_cast<uint32_t>(cursor);
                 codeLimit = rd32(cursor + 8);
                 signatureSize = rd32(cursor + 12);
