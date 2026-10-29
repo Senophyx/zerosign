@@ -1651,6 +1651,8 @@ struct SignRequest {
     std::string codeResourcesData;
     bool mainExecutable = false;
     bool adhoc = false;
+    // Used when identifier is empty: the bundle executable name.
+    std::string fallbackIdentifier;
 };
 
 std::string buildSignatureBlob(const MachOSlice& slice, const SignRequest& request) {
@@ -1847,12 +1849,31 @@ SliceSignResult signSlice(MachOSlice& slice, const SignRequest& request, uint32_
     return SliceSignResult::Ok;
 }
 
+std::string embeddedIdentifier(const MachOSlice& slice, const std::string& fallback) {
+    if (!slice.embeddedInfoPlist.empty()) {
+        PlistHolder plist(parsePlist(slice.embeddedInfoPlist));
+        if (plist.node != nullptr) {
+            const std::string identifier = plistString(plist.node, "CFBundleIdentifier");
+            if (!identifier.empty()) return identifier;
+        }
+    }
+    return fallback;
+}
+
 void signMachOFile(const fs::path& path, const SignRequest& request) {
     const std::string contents = readFile(path);
     std::vector<uint8_t> bytes(contents.begin(), contents.end());
 
     MachOImage image;
     image.load(bytes);
+
+    // The identifier is derived here so callers never have to parse the file a
+    // second time just to read it.
+    SignRequest effective = request;
+    if (effective.identifier.empty()) {
+        effective.identifier =
+            embeddedIdentifier(image.slices.front(), effective.fallbackIdentifier);
+    }
 
     for (MachOSlice& slice : image.slices) {
         // A corrupt code signature command must never be "repaired" by writing
@@ -1874,7 +1895,7 @@ void signMachOFile(const fs::path& path, const SignRequest& request) {
         SliceSignResult result = SliceSignResult::NeedSpace;
         for (int attempt = 0; attempt < 4 && result == SliceSignResult::NeedSpace; ++attempt) {
             uint32_t needed = 0;
-            result = signSlice(slice, request, needed);
+            result = signSlice(slice, effective, needed);
             if (result == SliceSignResult::NeedSpace) growSlice(slice, needed);
         }
         if (result == SliceSignResult::Failed) {
@@ -2030,16 +2051,6 @@ bool isMachOFile(const fs::path& path) {
     return MachOImage::looksLikeMachO(header, 4);
 }
 
-std::string embeddedIdentifier(const MachOSlice& slice, const std::string& fallback) {
-    if (!slice.embeddedInfoPlist.empty()) {
-        PlistHolder plist(parsePlist(slice.embeddedInfoPlist));
-        if (plist.node != nullptr) {
-            const std::string identifier = plistString(plist.node, "CFBundleIdentifier");
-            if (!identifier.empty()) return identifier;
-        }
-    }
-    return fallback;
-}
 
 struct BundleSigner {
     SigningIdentity* identity = nullptr;
@@ -2066,13 +2077,7 @@ struct BundleSigner {
             request.identity = identity;
             request.adhoc = adhoc;
             request.mainExecutable = false;
-            request.codeResourcesData.clear();
-            request.infoPlistData.clear();
-
-            MachOImage image;
-            const std::string contents = readFile(file);
-            image.load(std::vector<uint8_t>(contents.begin(), contents.end()));
-            request.identifier = embeddedIdentifier(image.slices.front(), file.filename().string());
+            request.fallbackIdentifier = file.filename().string();
             signMachOFile(file, request);
         }
 
