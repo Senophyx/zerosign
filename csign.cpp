@@ -1738,6 +1738,15 @@ void growSlice(MachOSlice& slice, uint32_t neededBlobSize) {
     const uint32_t wanted = neededBlobSize > 0 ? neededBlobSize : 128u * 1024u;
     const uint32_t wantedSize = limit + alignUp32(wanted + 4096, 4096);
     const uint32_t oldSize = static_cast<uint32_t>(slice.data.size());
+
+    // A signature blob is at most a few hundred kilobytes, so growth beyond
+    // the current size plus a generous slack means the file is lying about
+    // where the signature goes.
+    constexpr uint32_t kMaxGrowthSlack = 8u * 1024u * 1024u;
+    if (wantedSize > oldSize && wantedSize - oldSize > kMaxGrowthSlack) {
+        die("Mach-O file requests an unreasonable code signature area");
+    }
+
     const uint32_t newSize = std::max(wantedSize, oldSize);
 
     if (!slice.sigCommandOffset) {
