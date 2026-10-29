@@ -2240,9 +2240,10 @@ void addDirectoryToArchive(zip_t* archive, const fs::path& root, const fs::path&
     std::sort(entries.begin(), entries.end());
 
     for (const fs::path& entry : entries) {
-        std::error_code relativeError;
-        fs::path relative = fs::relative(entry, root, relativeError);
-        if (relativeError) continue;
+        // Lexical names only: resolving links would rename the entry after its
+        // target and collide with the real file.
+        const fs::path relative = entry.lexically_relative(root);
+        if (relative.empty()) continue;
         const std::string name = relative.generic_string();
 
         std::error_code statusError;
@@ -2250,10 +2251,19 @@ void addDirectoryToArchive(zip_t* archive, const fs::path& root, const fs::path&
             std::error_code readError;
             const fs::path target = fs::read_symlink(entry, readError);
             if (readError) continue;
-            const std::string linkTarget = target.string();
-            zip_source_t* source = zip_source_buffer(archive, linkTarget.data(),
-                                                     linkTarget.size(), 0);
-            if (source == nullptr) die("cannot add symbolic link '" + name + "'");
+            const std::string linkTarget = target.generic_string();
+            if (linkTarget.empty()) continue;
+
+            // libzip keeps this buffer until the archive is closed, so it gets a
+            // heap copy and takes over releasing it.
+            char* buffer = static_cast<char*>(std::malloc(linkTarget.size()));
+            if (buffer == nullptr) die("out of memory");
+            std::memcpy(buffer, linkTarget.data(), linkTarget.size());
+            zip_source_t* source = zip_source_buffer(archive, buffer, linkTarget.size(), 1);
+            if (source == nullptr) {
+                std::free(buffer);
+                die("cannot add symbolic link '" + name + "'");
+            }
             const zip_int64_t index =
                 zip_file_add(archive, name.c_str(), source, ZIP_FL_ENC_UTF_8);
             if (index < 0) {
