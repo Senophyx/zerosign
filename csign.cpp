@@ -1572,11 +1572,14 @@ std::string buildSignatureBlob(const MachOSlice& slice, const SignRequest& reque
     const std::string codeResources =
         request.codeResourcesData.empty() ? std::string() : request.codeResourcesData;
 
+    // Entitlements belong to executables only. Attaching the application's
+    // entitlements to a dynamic library makes the device reject the bundle.
+    const bool attachEntitlements = request.mainExecutable && slice.fileType == kMhExecute;
     const std::string entitlementsXml =
-        request.mainExecutable ? identity.entitlementsXml : std::string();
+        attachEntitlements ? identity.entitlementsXml : std::string();
     const std::string entitlementsBlob = buildEntitlementsBlob(entitlementsXml);
     const std::string derEntitlementsBlob =
-        request.mainExecutable ? buildDerEntitlementsBlob(identity.entitlements) : std::string();
+        attachEntitlements ? buildDerEntitlementsBlob(identity.entitlements) : std::string();
 
     const uint64_t execSegFlags =
         slice.fileType == kMhExecute ? kCsExecSegMainBinary : 0;
