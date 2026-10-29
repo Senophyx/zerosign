@@ -2000,6 +2000,17 @@ struct BundleSigner {
         }
 
         if (node.executable.empty()) return;
+        // CFBundleExecutable comes from an untrusted Info.plist. It names a
+        // file inside the bundle, never a path, so separators are rejected.
+        if (node.executable == "." || node.executable == ".." ||
+            node.executable.find('/') != std::string::npos ||
+            node.executable.find('\\') != std::string::npos) {
+            const std::string bundleLabel = (node.relativePath.empty() || node.relativePath == ".")
+                                                 ? node.dir.filename().string()
+                                                 : node.relativePath;
+            die("bundle '" + bundleLabel + "' has an unsafe CFBundleExecutable: '" +
+                node.executable + "'");
+        }
         fs::path executablePath = node.dir / node.executable;
         std::error_code ec;
         if (!fs::is_regular_file(executablePath, ec)) return;
