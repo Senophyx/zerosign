@@ -3419,8 +3419,17 @@ int commandCert(int argc, char** argv) {
 
     const fs::path pkeyTarget = directory / (name + ".p12");
     const fs::path provTarget = directory / (name + ".mobileprovision");
-    writeFile(pkeyTarget, readFile(pkeySource));
-    writeFile(provTarget, readFile(provSource));
+    const std::string pkeyData = readFile(pkeySource);
+    const std::string provData = readFile(provSource);
+    writeFile(pkeyTarget, pkeyData);
+    try {
+        writeFile(provTarget, provData);
+    } catch (...) {
+        // Do not leave a certificate without its profile behind.
+        std::error_code cleanupError;
+        fs::remove(pkeyTarget, cleanupError);
+        throw;
+    }
 
     SavedCertificate certificate;
     certificate.name = name;
