@@ -2430,7 +2430,9 @@ void extractArchive(const fs::path& archivePath, const fs::path& destination) {
         }
 
         writeFile(target, contents);
-        const mode_t permissions = (mode & 07777) != 0 ? (mode & 07777) : 0644;
+        // Setuid, setgid and sticky bits are dropped: they mean nothing inside
+        // an app bundle and must not survive into the signed package.
+        const mode_t permissions = (mode & 0777) != 0 ? (mode & 0777) : 0644;
         chmod(target.string().c_str(), permissions);
     }
 }
@@ -2491,9 +2493,9 @@ void addDirectoryToArchive(zip_t* archive, const fs::path& root, const fs::path&
             }
             struct stat info {};
             if (stat(entry.string().c_str(), &info) == 0) {
-                zip_file_set_external_attributes(archive, static_cast<zip_uint64_t>(index), 0,
-                                                 ZIP_OPSYS_UNIX,
-                                                 static_cast<zip_uint32_t>(info.st_mode) << 16);
+                zip_file_set_external_attributes(
+                    archive, static_cast<zip_uint64_t>(index), 0, ZIP_OPSYS_UNIX,
+                    static_cast<zip_uint32_t>(info.st_mode & 0777) << 16);
             }
         }
     }
