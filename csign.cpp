@@ -2882,6 +2882,8 @@ struct DeviceSession {
                     chunk == 0) {
                     afc_file_close(afc, handle);
                     std::fclose(file);
+                    // Leave no partial package behind on the device.
+                    afc_remove_path(afc, remote.c_str());
                     die("cannot upload '" + local.filename().string() + "' to the device");
                 }
                 written += chunk;
