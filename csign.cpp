@@ -2149,10 +2149,18 @@ void extractArchive(const fs::path& archivePath, const fs::path& destination) {
         const bool declaredDirectory = !entryName.empty() && entryName.back() == '/';
 
         // Reject absolute paths and parent escapes.
-        if (entryName.empty() || entryName[0] == '/' ||
-            entryName.find("..") != std::string::npos) {
-            continue;
+        if (entryName.empty() || entryName[0] == '/') continue;
+        bool unsafe = false;
+        {
+            size_t start = 0;
+            while (start <= entryName.size()) {
+                size_t end = entryName.find('/', start);
+                if (end == std::string::npos) end = entryName.size();
+                if (entryName.compare(start, end - start, "..") == 0) unsafe = true;
+                start = end + 1;
+            }
         }
+        if (unsafe) continue;
         while (!entryName.empty() && entryName.back() == '/') entryName.pop_back();
         if (entryName.empty()) continue;
 
@@ -2193,7 +2201,8 @@ void extractArchive(const fs::path& archivePath, const fs::path& destination) {
         }
 
         writeFile(target, contents);
-        chmod(target.string().c_str(), mode & 07777);
+        const mode_t permissions = (mode & 07777) != 0 ? (mode & 07777) : 0644;
+        chmod(target.string().c_str(), permissions);
     }
 }
 
