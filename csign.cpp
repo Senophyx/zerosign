@@ -44,6 +44,7 @@
 #include <openssl/objects.h>
 #include <openssl/pem.h>
 #include <openssl/pkcs12.h>
+#include <openssl/rand.h>
 #include <openssl/provider.h>
 #include <openssl/x509.h>
 
@@ -3144,10 +3145,15 @@ void refreshSavedCertificateVersion(const SavedCertificate& certificate) {
 
 std::string randomIdentifier() {
     static const char kAlphabet[] = "abcdefghijklmnopqrstuvwxyz0123456789";
+    unsigned char buffer[8];
+    if (RAND_bytes(buffer, static_cast<int>(sizeof(buffer))) != 1) {
+        die("cannot generate a random certificate name");
+    }
     std::string out;
-    out.reserve(8);
-    std::srand(static_cast<unsigned int>(std::time(nullptr)) ^ static_cast<unsigned int>(getpid()));
-    for (int i = 0; i < 8; ++i) out.push_back(kAlphabet[std::rand() % (sizeof(kAlphabet) - 1)]);
+    out.reserve(sizeof(buffer));
+    for (unsigned char byte : buffer) {
+        out.push_back(kAlphabet[byte % (sizeof(kAlphabet) - 1)]);
+    }
     return out;
 }
 
