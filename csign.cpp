@@ -1678,8 +1678,9 @@ void growSlice(MachOSlice& slice, uint32_t neededBlobSize) {
                                ? slice.codeLimit
                                : alignUp32(static_cast<uint32_t>(slice.data.size()), 16);
     const uint32_t wanted = neededBlobSize > 0 ? neededBlobSize : 128u * 1024u;
-    const uint32_t newSize = limit + alignUp32(wanted + 4096, 4096);
+    const uint32_t wantedSize = limit + alignUp32(wanted + 4096, 4096);
     const uint32_t oldSize = static_cast<uint32_t>(slice.data.size());
+    const uint32_t newSize = std::max(wantedSize, oldSize);
 
     if (!slice.sigCommandOffset) {
         const uint32_t commandEnd = slice.headerSize() + slice.rd32(20);
@@ -1699,8 +1700,10 @@ void growSlice(MachOSlice& slice, uint32_t neededBlobSize) {
     }
 
     const uint64_t grownFileSize = static_cast<uint64_t>(newSize) - slice.linkEditFileOffset;
+    // Derived from the file size so a smaller signature can never wrap the
+    // unsigned arithmetic, and never shrink an existing allocation.
     const uint64_t grownVmSize =
-        alignUp64(slice.linkEditVmSize + (newSize - oldSize), 4096);
+        std::max(slice.linkEditVmSize, alignUp64(grownFileSize, 16384));
     if (slice.is64) {
         slice.wr64(slice.linkEditCommandOffset + 32, grownVmSize);
         slice.wr64(slice.linkEditCommandOffset + 48, grownFileSize);
