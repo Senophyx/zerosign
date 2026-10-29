@@ -2746,6 +2746,7 @@ void printUsage() {
         "                        [--output <path>] [-i]\n"
         "  csign install <ipa-path>\n"
         "  csign cert\n"
+        "  csign check <ipa-path>\n"
         "\n"
         "Options:\n"
         "  --pkey <p12>          signing certificate (.p12)\n"
@@ -2956,6 +2957,20 @@ int commandCert(int argc, char** argv) {
     std::printf("\nSuccess! Saved to ~/.csign/\n");
     return 0;
 }
+int commandCheck(int argc, char** argv) {
+    if (argc < 3) die("missing .ipa path");
+    const fs::path ipaPath(expandHome(argv[2]));
+    if (!fs::is_regular_file(ipaPath)) die("cannot find '" + std::string(argv[2]) + "'");
+
+    const IpaInfo info = inspectIpa(ipaPath);
+    const bool signedState = info.hasCodeResources && info.signatureValid;
+
+    std::printf("App Name : %s\n", info.displayName.c_str());
+    std::printf("App Version : %s\n", info.version.c_str());
+    std::printf("Bundle Id : %s\n", info.bundleId.c_str());
+    std::printf("Signed : %s\n", signedState ? "True" : "False");
+    return 0;
+}
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -2968,6 +2983,7 @@ int main(int argc, char** argv) {
         if (command == "sign") return commandSign(argc, argv);
         if (command == "install") return commandInstall(argc, argv);
         if (command == "cert") return commandCert(argc, argv);
+        if (command == "check") return commandCheck(argc, argv);
         if (command == "-h" || command == "--help" || command == "help") {
             printUsage();
             return 0;
