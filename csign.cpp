@@ -3113,6 +3113,41 @@ bool jsonReadString(const std::string& source, const std::string& key, std::stri
     return false;
 }
 
+// Returns the text inside the object that follows "key", so a field is never
+// picked up from the wrong nesting level.
+bool jsonObjectSlice(const std::string& source, const std::string& key, std::string& out) {
+    const std::string needle = "\"" + key + "\"";
+    const size_t keyPos = source.find(needle);
+    if (keyPos == std::string::npos) return false;
+    const size_t start = source.find('{', keyPos + needle.size());
+    if (start == std::string::npos) return false;
+
+    int depth = 0;
+    bool inString = false;
+    for (size_t i = start; i < source.size(); ++i) {
+        const char c = source[i];
+        if (inString) {
+            if (c == '\\') {
+                ++i;
+            } else if (c == '"') {
+                inString = false;
+            }
+            continue;
+        }
+        if (c == '"') {
+            inString = true;
+        } else if (c == '{') {
+            ++depth;
+        } else if (c == '}') {
+            if (--depth == 0) {
+                out = source.substr(start + 1, i - start - 1);
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
 bool loadSavedCertificate(SavedCertificate& certificate) {
     const fs::path path = certificateDirectory() / "csign.json";
     std::string contents;
@@ -3121,13 +3156,18 @@ bool loadSavedCertificate(SavedCertificate& certificate) {
     // The file exists, so a missing field is a broken configuration rather than
     // an absent one.
     const std::string malformed = "'" + path.string() + "' is malformed";
-    if (!jsonReadString(contents, "name", certificate.name) || certificate.name.empty()) {
+    std::string certificateBlock;
+    if (!jsonObjectSlice(contents, "certificate", certificateBlock)) {
+        die(malformed + ": no certificate object");
+    }
+    if (!jsonReadString(certificateBlock, "name", certificate.name) ||
+        certificate.name.empty()) {
         die(malformed + ": no certificate name");
     }
     jsonReadString(contents, "version", certificate.version);
-    jsonReadString(contents, "pkey", certificate.pkey);
-    jsonReadString(contents, "prov", certificate.prov);
-    jsonReadString(contents, "password", certificate.password);
+    jsonReadString(certificateBlock, "pkey", certificate.pkey);
+    jsonReadString(certificateBlock, "prov", certificate.prov);
+    jsonReadString(certificateBlock, "password", certificate.password);
     if (certificate.pkey.empty() || certificate.prov.empty()) {
         die(malformed + ": no certificate paths");
     }
