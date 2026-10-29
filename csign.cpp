@@ -2201,11 +2201,14 @@ struct ZipArchive {
         if (handle == nullptr) die("cannot create '" + path.string() + "'");
     }
 
-    void close() {
-        if (handle != nullptr) {
-            zip_close(handle);
-            handle = nullptr;
-        }
+    // Returns false when libzip could not finalize the archive. Callers that
+    // produced output must treat that as a failure: the file on disk is not a
+    // usable archive.
+    bool close() {
+        if (handle == nullptr) return true;
+        zip_t* closing = handle;
+        handle = nullptr;
+        return zip_close(closing) == 0;
     }
 
     bool readEntry(const std::string& name, std::string& out) const {
@@ -2367,7 +2370,11 @@ void createArchive(const fs::path& source, const fs::path& archivePath) {
     ZipArchive archive;
     archive.openWrite(archivePath);
     addDirectoryToArchive(archive.handle, source, source);
-    archive.close();
+    if (!archive.close()) {
+        std::error_code removeError;
+        fs::remove(archivePath, removeError);
+        die("cannot finalize '" + archivePath.string() + "'");
+    }
 }
 
 // ---------------------------------------------------------------------------
