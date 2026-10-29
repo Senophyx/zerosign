@@ -2490,26 +2490,25 @@ struct IpaInfo {
     bool signatureValid = false;
 };
 
-bool sliceHasSignature(const MachOSlice& slice) {
+// Recomputes every hash the signature commits to. A signature that is merely
+// present is not a valid one: the sealed bytes have to match it.
+bool sliceHasSignature(const MachOSlice& slice, const std::string& infoPlist,
+                       const std::string& codeResources) {
     if (!slice.parsed || slice.sigCommandOffset == 0) return false;
     if (slice.signatureSize < sizeof(cs_super_blob_t)) return false;
     const uint64_t end = static_cast<uint64_t>(slice.codeLimit) + slice.signatureSize;
     if (end > slice.data.size()) return false;
 
     const uint8_t* base = slice.data.data() + slice.codeLimit;
-    const uint32_t magic = readBe32(base);
-    if (magic != kCsMagicEmbeddedSignature) return false;
+    if (readBe32(base) != kCsMagicEmbeddedSignature) return false;
 
-    const uint32_t length =
-        (static_cast<uint32_t>(base[4]) << 24) | (static_cast<uint32_t>(base[5]) << 16) |
-        (static_cast<uint32_t>(base[6]) << 8) | base[7];
-    const uint32_t count =
-        (static_cast<uint32_t>(base[8]) << 24) | (static_cast<uint32_t>(base[9]) << 16) |
-        (static_cast<uint32_t>(base[10]) << 8) | base[11];
+    const uint32_t length = readBe32(base + 4);
+    const uint32_t count = readBe32(base + 8);
     if (length < 12 || length > slice.signatureSize || count > 32) return false;
 
     bool hasDirectory = false;
     bool hasCms = false;
+
     for (uint32_t i = 0; i < count; ++i) {
         const size_t indexOffset = 12 + static_cast<size_t>(i) * 8;
         if (indexOffset + 8 > length) return false;
@@ -2519,17 +2518,152 @@ bool sliceHasSignature(const MachOSlice& slice) {
         const uint32_t blobMagic = readBe32(base + offset);
         const uint32_t blobLength = readBe32(base + offset + 4);
         if (blobLength < 8 || offset + blobLength > length) return false;
-        if ((type == kCsSlotCodeDirectory ||
-             type == kCsSlotAlternateCodeDirectories) &&
-            blobMagic == kCsMagicCodeDirectory && blobLength > 8) {
-            hasDirectory = true;
-        }
+
         if (type == kCsSlotSignature && blobMagic == kCsMagicBlobWrapper) hasCms = true;
+        if ((type != kCsSlotCodeDirectory && type != kCsSlotAlternateCodeDirectories) ||
+            blobMagic != kCsMagicCodeDirectory) {
+            continue;
+        }
+        if (blobLength < sizeof(cs_code_directory_t)) return false;
+
+        cs_code_directory_t header {};
+        std::memcpy(&header, base + offset, sizeof(header));
+        const uint32_t hashOffset = swap32(header.hashOffset);
+        const uint32_t nCodeSlots = swap32(header.nCodeSlots);
+        const uint32_t nSpecialSlots = swap32(header.nSpecialSlots);
+        const uint32_t codeLimit = swap32(header.codeLimit);
+        const uint32_t hashSize = header.hashSize;
+        const uint32_t hashType = header.hashType;
+
+        if (hashType != 1 && hashType != 2) return false;
+        if (hashSize != (hashType == 1 ? 20u : 32u)) return false;
+        if (codeLimit > slice.data.size()) return false;
+        if (static_cast<uint64_t>(hashOffset) + static_cast<uint64_t>(nCodeSlots) * hashSize >
+            blobLength) {
+            return false;
+        }
+        if (static_cast<uint64_t>(nSpecialSlots) * hashSize > hashOffset) return false;
+
+        const uint8_t* directory = base + offset;
+        Digest digest(hashType == 1 ? EVP_sha1() : EVP_sha256());
+
+        for (uint32_t page = 0; page < nCodeSlots; ++page) {
+            const uint32_t start = page * kCodePageSize;
+            if (start >= codeLimit) return false;
+            const uint32_t size = std::min(kCodePageSize, codeLimit - start);
+            const std::string expected = digest(slice.data.data() + start, size);
+            const uint8_t* stored = directory + hashOffset + static_cast<size_t>(page) * hashSize;
+            if (std::memcmp(stored, expected.data(), hashSize) != 0) return false;
+        }
+
+        for (uint32_t slot = 1; slot <= nSpecialSlots; ++slot) {
+            const uint8_t* stored = directory + hashOffset - static_cast<size_t>(slot) * hashSize;
+            std::string expected;
+            if (slot == kCsSlotInfoPlist) {
+                expected = digest(infoPlist.data(), infoPlist.size());
+            } else if (slot == kCsSlotResourceDir) {
+                expected = digest(codeResources.data(), codeResources.size());
+            } else {
+                const uint8_t* blob = nullptr;
+                uint32_t blobLen = 0;
+                for (uint32_t j = 0; j < count; ++j) {
+                    const size_t otherIndex = 12 + static_cast<size_t>(j) * 8;
+                    if (readBe32(base + otherIndex) != slot) continue;
+                    const uint32_t otherOffset = readBe32(base + otherIndex + 4);
+                    if (otherOffset + 8 > length) return false;
+                    blob = base + otherOffset;
+                    blobLen = readBe32(blob + 4);
+                    break;
+                }
+                if (blob == nullptr) {
+                    // An unused slot is expected to be all zeroes.
+                    static const uint8_t zeros[32] = {0};
+                    if (std::memcmp(stored, zeros, hashSize) != 0) return false;
+                    continue;
+                }
+                expected = digest(blob, blobLen);
+            }
+            if (std::memcmp(stored, expected.data(), hashSize) != 0) return false;
+        }
+
+        hasDirectory = true;
     }
+
     return hasDirectory && hasCms;
 }
 
-bool binaryHasSignature(const std::string& bytes) {
+// Compares the sealed resource list against the files that are actually in the
+// archive, so a modified payload no longer looks signed.
+bool verifySealedResources(const ZipArchive& archive, const std::string& appDirectory,
+                           const std::string& codeResourcesData) {
+    PlistHolder root(parsePlist(codeResourcesData));
+    if (root.node == nullptr) return false;
+
+    // files2 carries SHA-256 digests and covers the files that matter; the
+    // legacy list is only used when no modern one is present.
+    const char* sectionName = "files2";
+    plist_t entries = plist_dict_get_item(root.node, sectionName);
+    if (entries == nullptr) {
+        sectionName = "files";
+        entries = plist_dict_get_item(root.node, sectionName);
+    }
+    if (entries == nullptr) return false;
+
+    auto dataOf = [](plist_t node) {
+        std::string out;
+        char* raw = nullptr;
+        uint64_t length = 0;
+        plist_get_data_val(node, &raw, &length);
+        if (raw != nullptr) out.assign(raw, static_cast<size_t>(length));
+        std::free(raw);
+        return out;
+    };
+
+    plist_dict_iter iter = nullptr;
+    plist_dict_new_iter(entries, &iter);
+    if (iter == nullptr) return false;
+
+    bool ok = true;
+    char* key = nullptr;
+    plist_t value = nullptr;
+    do {
+        key = nullptr;
+        value = nullptr;
+        plist_dict_next_item(entries, iter, &key, &value);
+        if (key != nullptr && value != nullptr) {
+            const std::string name = key;
+            std::string contents;
+            const bool present = archive.readEntry(appDirectory + "/" + name, contents);
+
+            if (plist_get_node_type(value) == PLIST_DICT) {
+                plist_t symlink = plist_dict_get_item(value, "symlink");
+                if (symlink != nullptr) {
+                    char* target = nullptr;
+                    plist_get_string_val(symlink, &target);
+                    const std::string expected = target != nullptr ? target : "";
+                    std::free(target);
+                    if (!present || contents != expected) ok = false;
+                } else if (!present) {
+                    ok = false;
+                } else {
+                    plist_t hash1 = plist_dict_get_item(value, "hash");
+                    plist_t hash2 = plist_dict_get_item(value, "hash2");
+                    if (hash1 != nullptr && sha1(contents) != dataOf(hash1)) ok = false;
+                    if (hash2 != nullptr && sha256(contents) != dataOf(hash2)) ok = false;
+                }
+            } else if (plist_get_node_type(value) == PLIST_DATA) {
+                if (!present || sha1(contents) != dataOf(value)) ok = false;
+            }
+        }
+        std::free(key);
+    } while (value != nullptr);
+
+    std::free(iter);
+    return ok;
+}
+
+bool binaryHasSignature(const std::string& bytes, const std::string& infoPlist,
+                        const std::string& codeResources) {
     if (bytes.size() < 8) return false;
     const uint32_t magic = readBe32(reinterpret_cast<const uint8_t*>(bytes.data()));
     if (magic == kFatMagic || magic == kFatCigam) {
@@ -2540,7 +2674,6 @@ bool binaryHasSignature(const std::string& bytes) {
             std::memcpy(&value, p, sizeof(value));
             return bigEndian ? swap32(value) : value;
         };
-        if (bytes.size() < 8) return false;
         const uint32_t count = read32(4);
         if (count == 0 || count > 64) return false;
         bool any = false;
@@ -2552,7 +2685,9 @@ bool binaryHasSignature(const std::string& bytes) {
             if (static_cast<size_t>(offset) + size > bytes.size()) return false;
             MachOSlice slice;
             slice.data.assign(bytes.begin() + offset, bytes.begin() + offset + size);
-            if (!slice.parse() || !sliceHasSignature(slice)) return false;
+            if (!slice.parse() || !sliceHasSignature(slice, infoPlist, codeResources)) {
+                return false;
+            }
             any = true;
         }
         return any;
@@ -2561,7 +2696,7 @@ bool binaryHasSignature(const std::string& bytes) {
     MachOSlice slice;
     slice.data.assign(bytes.begin(), bytes.end());
     if (!slice.parse()) return false;
-    return sliceHasSignature(slice);
+    return sliceHasSignature(slice, infoPlist, codeResources);
 }
 
 IpaInfo inspectIpa(const fs::path& ipaPath) {
@@ -2604,8 +2739,15 @@ IpaInfo inspectIpa(const fs::path& ipaPath) {
 
     if (!info.executable.empty()) {
         std::string binary;
+        std::string codeResources;
+        archive.readEntry(info.appDirectory + "/_CodeSignature/CodeResources", codeResources);
         if (archive.readEntry(info.appDirectory + "/" + info.executable, binary)) {
-            info.signatureValid = binaryHasSignature(binary);
+            info.signatureValid =
+                binaryHasSignature(binary, info.infoPlist, codeResources);
+        }
+        if (info.signatureValid && !codeResources.empty()) {
+            info.signatureValid =
+                verifySealedResources(archive, info.appDirectory, codeResources);
         }
     }
 
