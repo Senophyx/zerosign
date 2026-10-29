@@ -2812,11 +2812,23 @@ int commandSign(int argc, char** argv) {
 
     if (ipaPath.empty()) die("missing .ipa path");
 
-    if (pkeyPath.empty() || provPath.empty()) {
-        die("--pkey and --prov are required");
+    SavedCertificate saved;
+    bool usingSaved = false;
+    if (pkeyPath.empty() && provPath.empty()) {
+        if (!loadSavedCertificate(saved)) {
+            die("no certificate saved yet, run 'csign cert' or pass --pkey and --prov");
+        }
+        pkeyPath = expandHome(saved.pkey);
+        provPath = expandHome(saved.prov);
+        password = saved.password;
+        havePassword = true;
+        usingSaved = true;
+    } else if (pkeyPath.empty() || provPath.empty()) {
+        die("--pkey and --prov must be used together");
     }
 
     if (!havePassword) password = promptHidden("Input Password : ");
+    if (usingSaved) std::printf("Signing using \"%s\" certificate...\n", saved.name.c_str());
 
     const fs::path input(expandHome(ipaPath));
     if (!fs::is_regular_file(input)) die("cannot find '" + ipaPath + "'");
