@@ -3114,16 +3114,24 @@ bool jsonReadString(const std::string& source, const std::string& key, std::stri
 }
 
 bool loadSavedCertificate(SavedCertificate& certificate) {
+    const fs::path path = certificateDirectory() / "csign.json";
     std::string contents;
-    if (!readFileIfExists(certificateDirectory() / "csign.json", contents)) return false;
+    if (!readFileIfExists(path, contents)) return false;
+
+    // The file exists, so a missing field is a broken configuration rather than
+    // an absent one.
+    const std::string malformed = "'" + path.string() + "' is malformed";
     if (!jsonReadString(contents, "name", certificate.name) || certificate.name.empty()) {
-        return false;
+        die(malformed + ": no certificate name");
     }
     jsonReadString(contents, "version", certificate.version);
     jsonReadString(contents, "pkey", certificate.pkey);
     jsonReadString(contents, "prov", certificate.prov);
     jsonReadString(contents, "password", certificate.password);
-    return !certificate.pkey.empty() && !certificate.prov.empty();
+    if (certificate.pkey.empty() || certificate.prov.empty()) {
+        die(malformed + ": no certificate paths");
+    }
+    return true;
 }
 
 void saveCertificateFile(const SavedCertificate& certificate) {
