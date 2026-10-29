@@ -2231,6 +2231,16 @@ struct ZipArchive {
     }
 };
 
+// True when candidate is base itself or lies below it.
+bool pathIsWithin(const fs::path& base, const fs::path& candidate) {
+    auto b = base.begin();
+    auto c = candidate.begin();
+    for (; b != base.end(); ++b, ++c) {
+        if (c == candidate.end() || *b != *c) return false;
+    }
+    return true;
+}
+
 void extractArchive(const fs::path& archivePath, const fs::path& destination) {
     ZipArchive archive;
     archive.openRead(archivePath);
@@ -2260,6 +2270,18 @@ void extractArchive(const fs::path& archivePath, const fs::path& destination) {
 
         const fs::path target = destination / entryName;
         std::error_code ec;
+
+        // An entry may sit below a symbolic link created earlier in the same
+        // archive. Resolving the parent catches that, so nothing is ever
+        // written through a link that points out of the staging directory.
+        const fs::path resolvedBase = fs::weakly_canonical(destination, ec);
+        if (ec) die("cannot resolve '" + destination.string() + "'");
+        const fs::path resolvedParent = fs::weakly_canonical(target.parent_path(), ec);
+        if (ec) die("cannot resolve '" + target.parent_path().string() + "'");
+        if (!pathIsWithin(resolvedBase, resolvedParent)) {
+            die("refusing to extract '" + entryName + "' outside the staging directory");
+        }
+
         fs::create_directories(target.parent_path(), ec);
 
         zip_uint8_t opsys = 0;
