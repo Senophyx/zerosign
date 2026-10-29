@@ -275,6 +275,13 @@ constexpr uint32_t kCodePageSize = 1u << kCodePageShift;
 // Only the WWDR intermediates and Apple roots are needed: they let the CMS
 // signature carry a complete chain even when the .p12 holds nothing but the
 // leaf certificate and its private key.
+//
+// Expiry dates of the bundled anchors, so a stale build is easy to spot:
+//   WWDR G2  2029-05-06    WWDR G3  2030-02-20    WWDR G4  2030-12-10
+//   WWDR G5  2030-12-10    WWDR G6  2036-03-19
+//   Apple Root CA  2035-02-09    Apple Root CA G2  2039-04-30
+//   Apple Root CA G3  2039-04-30
+// A warning is printed at run time once one of them is close to expiring.
 
 const char* const kIntermediatePems[] = {
     // Apple Worldwide Developer Relations CA - G2
@@ -1398,6 +1405,7 @@ struct SigningIdentity {
         }
 
         buildChain();
+        warnAboutChainExpiry();
     }
 
     static std::string certificateCommonName(X509* cert) {
@@ -1476,6 +1484,30 @@ struct SigningIdentity {
             chain.push_back(issuer);
             current = issuer;
             if (X509_check_issued(issuer, issuer) == X509_V_OK) break;  // self-signed root
+        }
+    }
+
+    // Reports anchors that are expired or about to expire, so a signing chain
+    // never silently goes stale.
+    void warnAboutChainExpiry() const {
+        for (X509* cert : chain) {
+            int days = 0;
+            int seconds = 0;
+            if (ASN1_TIME_diff(&days, &seconds, nullptr, X509_get0_notAfter(cert)) != 1) {
+                continue;
+            }
+            const std::string name = certificateCommonName(cert);
+            if (days < 0) {
+                std::fprintf(stderr,
+                             "warning: bundled Apple certificate '%s' has expired; "
+                             "update csign\n",
+                             name.c_str());
+            } else if (days < 90) {
+                std::fprintf(stderr,
+                             "warning: bundled Apple certificate '%s' expires in %d days; "
+                             "update csign\n",
+                             name.c_str(), days);
+            }
         }
     }
 
