@@ -3150,8 +3150,8 @@ std::string randomIdentifier() {
 
 void printVersion() { std::printf("csign %s\n", kVersion); }
 
-void printUsage() {
-    std::printf(
+void printUsage(std::FILE* stream) {
+    std::fprintf(stream,
         "csign %s - sign and install iOS apps directly to your device\n"
         "\n"
         "Usage:\n"
@@ -3407,7 +3407,7 @@ int commandCheck(int argc, char** argv) {
 int main(int argc, char** argv) {
     try {
         if (argc < 2) {
-            printUsage();
+            printUsage(stderr);
             return 1;
         }
         const std::string command = argv[1];
@@ -3420,11 +3420,11 @@ int main(int argc, char** argv) {
             return 0;
         }
         if (command == "-h" || command == "--help" || command == "help") {
-            printUsage();
+            printUsage(stdout);
             return 0;
         }
         std::fprintf(stderr, "error: unknown command '%s'\n", command.c_str());
-        printUsage();
+        printUsage(stderr);
         return 1;
     } catch (const std::exception& error) {
         std::fprintf(stderr, "error: %s\n", error.what());
