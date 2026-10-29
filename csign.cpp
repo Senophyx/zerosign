@@ -2025,13 +2025,14 @@ struct BundleSigner {
 
         for (const BundleNode& child : node.children) signNode(child);
 
-        // The provisioning profile must be inside every app bundle before the
+        // The provisioning profile must be inside the app bundle before the
         // seal is generated. Without it the device cannot authorize the
         // entitlements, so the app installs but is killed the moment it starts.
-        if (identity != nullptr && !identity->profileData.empty() &&
-            (node.relativePath.empty() || node.relativePath == "." ||
-             fs::path(node.relativePath).extension() == ".app" ||
-             fs::path(node.relativePath).extension() == ".appex")) {
+        // Extensions carry no entitlements here, so they get no profile either.
+        const std::string bundleExtension = fs::path(node.relativePath).extension().string();
+        const bool isAppBundle = node.relativePath.empty() || node.relativePath == "." ||
+                                 bundleExtension == ".app";
+        if (identity != nullptr && !identity->profileData.empty() && isAppBundle) {
             writeFile(node.dir / "embedded.mobileprovision", identity->profileData);
         }
 
