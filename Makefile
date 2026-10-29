@@ -45,7 +45,10 @@ export PKG_CONFIG_PATH := $(PKG_PATH):$(PKG_CONFIG_PATH)
 PKG_CFLAGS := $(shell pkg-config --cflags $(PKGS) 2>/dev/null)
 PKG_LIBS   := $(shell pkg-config --libs $(PKGS) 2>/dev/null)
 
-CXXFLAGS ?= -std=c++17 -O2 -Wall -Wextra -Wno-unused-parameter
+# Kept apart from CXXFLAGS so a value from the environment cannot drop the
+# language standard this project needs.
+CXXSTD   ?= -std=c++17
+CXXFLAGS ?= -O2 -Wall -Wextra -Wno-unused-parameter
 LDLIBS   := $(PKG_LIBS)
 
 .PHONY: all compile mac linux clean
@@ -55,7 +58,7 @@ all: $(TARGET)
 compile: $(TARGET)
 
 $(TARGET): $(SOURCES)
-	$(CXX) $(CXXFLAGS) $(EXTRA_CXXFLAGS) $(PKG_CFLAGS) -o $@ $(SOURCES) $(EXTRA_LDFLAGS) $(LDLIBS)
+	$(CXX) $(CXXSTD) $(CXXFLAGS) $(EXTRA_CXXFLAGS) $(PKG_CFLAGS) -o $@ $(SOURCES) $(EXTRA_LDFLAGS) $(LDLIBS)
 
 # No-op goal markers so "make compile mac" and "make compile linux" stay clean.
 mac:
