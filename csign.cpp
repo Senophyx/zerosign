@@ -14,6 +14,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cerrno>
+#include <chrono>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -24,10 +25,12 @@
 #include <functional>
 #include <map>
 #include <memory>
+#include <mutex>
 #include <set>
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include <sys/stat.h>
@@ -286,7 +289,7 @@ const char* const kIntermediatePems[] = {
     "AQYwEAYKKoZIhvdjZAYCDwQCBQAwCgYIKoZIzj0EAwIDaQAwZgIxANmxxzHGI/ZP\n"
     "TdDZR8V9GGkRh3En02it4Jtlmr5s3z9GppAJvm6hOyywUYlBPIfSvwIxAPxkUolL\n"
     "PF2/axzCiZgvcq61m6oaCyNUd1ToFUOixRLal1BzfF7QbrJcYlDXUfE6Wg==\n"
-    "-----END CERTIFICATE-----\n"
+    "-----END CERTIFICATE-----\n",
     // Apple Worldwide Developer Relations Certification Authority (G3)
     "-----BEGIN CERTIFICATE-----\n"
     "MIIEUTCCAzmgAwIBAgIQfK9pCiW3Of57m0R6wXjF7jANBgkqhkiG9w0BAQsFADBi\n"
@@ -313,7 +316,7 @@ const char* const kIntermediatePems[] = {
     "bJmCS1JgOLU5gm3sUjFTvg+RTElJdI+mUcuER04ddSduvfnSXPN/wmwLCTbiZOTC\n"
     "NwMUGdXqapSqqdv+9poIZ4vvK7iqF0mDr8/LvOnP6pVxsLRFoszlh6oKw0E6eVza\n"
     "UDSdlTs=\n"
-    "-----END CERTIFICATE-----\n"
+    "-----END CERTIFICATE-----\n",
     // Apple Worldwide Developer Relations CA - G4
     "-----BEGIN CERTIFICATE-----\n"
     "MIIEVTCCAz2gAwIBAgIUE9x3lVJx5T3GMujM/+Uh88zFztIwDQYJKoZIhvcNAQEL\n"
@@ -340,7 +343,7 @@ const char* const kIntermediatePems[] = {
     "EtHlgepZAE9bPFo22noicwkJac3AfOriJP6YRLj477JxPxpd1F1+M02cHSS+APCQ\n"
     "A1iZQT0xWmJArzmoUUOSqwSonMJNsUvSq3xKX+udO7xPiEAGE/+QF4oIRynoYpgp\n"
     "pU8RBWk6z/Kf\n"
-    "-----END CERTIFICATE-----\n"
+    "-----END CERTIFICATE-----\n",
     // Apple Worldwide Developer Relations CA - G5
     "-----BEGIN CERTIFICATE-----\n"
     "MIIEVTCCAz2gAwIBAgIUO36ACu7TAqHm7NuX2cqsKJzxaZQwDQYJKoZIhvcNAQEL\n"
@@ -367,7 +370,7 @@ const char* const kIntermediatePems[] = {
     "qs5NRWDbhHFmYuUZZTDNiv9FU/tu+4h3Q8NIY/n3UbNyXnniVs+8u4S5OFp4rhFI\n"
     "UrsNNYuU3sx0mmj1SWCUrPKosxWGkNDMMEOG0+VwAlG0gcCol9Tq6rCMCUDvOJOy\n"
     "zSID62dDZchF\n"
-    "-----END CERTIFICATE-----\n"
+    "-----END CERTIFICATE-----\n",
     // Apple Worldwide Developer Relations CA - G6
     "-----BEGIN CERTIFICATE-----\n"
     "MIIDFjCCApygAwIBAgIUIsGhRwp0c2nvU4YSycafPTjzbNcwCgYIKoZIzj0EAwMw\n"
@@ -387,7 +390,7 @@ const char* const kIntermediatePems[] = {
     "BAIFADAKBggqhkjOPQQDAwNoADBlAjBAXhSq5IyKogMCPtw490BaB677CaEGJXuf\n"
     "QB/EqZGd6CSjiCtOnuMTbXVXmxxcxfkCMQDTSPxarZXvNrkxU3TkUMI33yzvFVVR\n"
     "T4wxWJC994OsdcZ4+RGNsYDyR5gmdr0nDGg=\n"
-    "-----END CERTIFICATE-----\n"
+    "-----END CERTIFICATE-----\n",
 };
 
 const char* const kRootPems[] = {
@@ -419,7 +422,7 @@ const char* const kRootPems[] = {
     "xhtbCS+SsvhESPBgOJ4V9T0mZyCKM2r3DYLP3uujL/lTaltkwGMzd/c6ByxW69oP\n"
     "IQ7aunMZT7XZNn/Bh1XZp5m5MkL72NVxnn6hUrcbvZNCJBIqxw8dtk2cXmPIS4AX\n"
     "UKqK1drk/NAJBzewdXUh\n"
-    "-----END CERTIFICATE-----\n"
+    "-----END CERTIFICATE-----\n",
     // Apple Root CA - G2
     "-----BEGIN CERTIFICATE-----\n"
     "MIIFkjCCA3qgAwIBAgIIAeDltYNno+AwDQYJKoZIhvcNAQEMBQAwZzEbMBkGA1UE\n"
@@ -452,7 +455,7 @@ const char* const kRootPems[] = {
     "Tta6SqoWqPQFZ2aWuuJVecMsXUmPgEkrihLHdoBR37q9ZV0+N0djMenl9MU/S60E\n"
     "inpxLK8JQzcPqOMyT/RFtm2XNuyE9QoB6he7hY1Ck3DDUOUUi78/w0EP3SIEIwiK\n"
     "um1xRKtzCTrJ+VKACd+66eYWyi4uTLLT3OUEVLLUNIAytbwPF+E=\n"
-    "-----END CERTIFICATE-----\n"
+    "-----END CERTIFICATE-----\n",
     // Apple Root CA - G3
     "-----BEGIN CERTIFICATE-----\n"
     "MIICQzCCAcmgAwIBAgIILcX8iNLFS5UwCgYIKoZIzj0EAwMwZzEbMBkGA1UEAwwS\n"
@@ -468,7 +471,7 @@ const char* const kRootPems[] = {
     "MGUCMQCD6cHEFl4aXTQY2e3v9GwOAEZLuN+yRhHFD/3meoyhpmvOwgPUnPWTxnS4\n"
     "at+qIxUCMG1mihDK1A3UT82NQz60imOlM27jbdoXt2QfyFMm+YhidDkLF1vLUagM\n"
     "6BgD56KyKA==\n"
-    "-----END CERTIFICATE-----\n"
+    "-----END CERTIFICATE-----\n",
 };
 
 // ---------------------------------------------------------------------------
@@ -540,37 +543,6 @@ std::string expandHome(const std::string& value) {
         return std::string(home) + value.substr(1);
     }
     return value;
-}
-
-std::string toBase64(const unsigned char* data, size_t size) {
-    static const char kTable[] =
-        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    std::string out;
-    out.reserve((size + 2) / 3 * 4);
-    size_t i = 0;
-    for (; i + 2 < size; i += 3) {
-        uint32_t v = (static_cast<uint32_t>(data[i]) << 16) |
-                     (static_cast<uint32_t>(data[i + 1]) << 8) | data[i + 2];
-        out.push_back(kTable[(v >> 18) & 0x3f]);
-        out.push_back(kTable[(v >> 12) & 0x3f]);
-        out.push_back(kTable[(v >> 6) & 0x3f]);
-        out.push_back(kTable[v & 0x3f]);
-    }
-    if (i + 1 == size) {
-        uint32_t v = static_cast<uint32_t>(data[i]) << 16;
-        out.push_back(kTable[(v >> 18) & 0x3f]);
-        out.push_back(kTable[(v >> 12) & 0x3f]);
-        out.push_back('=');
-        out.push_back('=');
-    } else if (i + 2 == size) {
-        uint32_t v = (static_cast<uint32_t>(data[i]) << 16) |
-                     (static_cast<uint32_t>(data[i + 1]) << 8);
-        out.push_back(kTable[(v >> 18) & 0x3f]);
-        out.push_back(kTable[(v >> 12) & 0x3f]);
-        out.push_back(kTable[(v >> 6) & 0x3f]);
-        out.push_back('=');
-    }
-    return out;
 }
 
 // Reusable message digest helper (no deprecated one-shot SHA API).
@@ -1030,6 +1002,8 @@ struct MachOImage {
             offsets.push_back(static_cast<uint32_t>(cursor));
             cursor = alignUp32(static_cast<uint32_t>(cursor + slice.data.size()), alignment);
         }
+        // No trailing padding: the file ends exactly where the last slice ends.
+        cursor = offsets.back() + slices.back().data.size();
 
         std::vector<uint8_t> out(cursor, 0);
         auto write32 = [&](size_t offset, uint32_t value) {
@@ -1997,10 +1971,8 @@ struct BundleSigner {
             std::string contents;
             if (!readFileIfExists(fullPath, contents)) continue;
 
-            const std::string hash1 = toBase64(
-                reinterpret_cast<const unsigned char*>(sha1(contents).data()), 20);
-            const std::string hash256 = toBase64(
-                reinterpret_cast<const unsigned char*>(sha256(contents).data()), 32);
+            const std::string hash1 = sha1(contents);
+            const std::string hash256 = sha256(contents);
 
             const bool isLocalized = relative.find(".lproj/") != std::string::npos;
             const bool isLocVersion =
@@ -2010,23 +1982,23 @@ struct BundleSigner {
             const bool omitFromV2 =
                 baseName == ".DS_Store" || relative == "Info.plist" || relative == "PkgInfo";
 
+            // Both resource directories store raw digests as data blobs.
             if (!isLocVersion) {
                 if (isLocalized) {
                     plist_t entry = plist_new_dict();
-                    plist_dict_set_item(entry, "hash", plist_new_string(("data:" + hash1).c_str()));
+                    plist_dict_set_item(entry, "hash", plist_new_data(hash1.data(), 20));
                     plist_dict_set_item(entry, "optional", plist_new_bool(1));
                     plist_dict_set_item(filesV1, relative.c_str(), entry);
                 } else {
                     plist_dict_set_item(filesV1, relative.c_str(),
-                                        plist_new_string(("data:" + hash1).c_str()));
+                                        plist_new_data(hash1.data(), 20));
                 }
             }
 
             if (!omitFromV2) {
                 plist_t entry = plist_new_dict();
-                plist_dict_set_item(entry, "hash", plist_new_string(("data:" + hash1).c_str()));
-                plist_dict_set_item(entry, "hash2",
-                                    plist_new_string(("data:" + hash256).c_str()));
+                plist_dict_set_item(entry, "hash", plist_new_data(hash1.data(), 20));
+                plist_dict_set_item(entry, "hash2", plist_new_data(hash256.data(), 32));
                 if (isLocalized) plist_dict_set_item(entry, "optional", plist_new_bool(1));
                 plist_dict_set_item(filesV2, relative.c_str(), entry);
             }
