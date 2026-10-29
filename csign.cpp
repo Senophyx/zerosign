@@ -3137,10 +3137,32 @@ void saveCertificateFile(const SavedCertificate& certificate) {
     writeFile(directory / "csign.json", json);
 }
 
+// True when the dotted version in a is strictly newer than the one in b.
+bool versionIsNewer(const std::string& a, const std::string& b) {
+    size_t aPos = 0;
+    size_t bPos = 0;
+    while (aPos < a.size() || bPos < b.size()) {
+        auto next = [](const std::string& text, size_t& pos) -> long {
+            if (pos >= text.size()) return 0;
+            const size_t end = text.find('.', pos);
+            const std::string part = text.substr(pos, end == std::string::npos ? std::string::npos
+                                                                              : end - pos);
+            pos = end == std::string::npos ? text.size() : end + 1;
+            return std::strtol(part.c_str(), nullptr, 10);
+        };
+        const long left = next(a, aPos);
+        const long right = next(b, bPos);
+        if (left != right) return left > right;
+    }
+    return false;
+}
+
 // Keeps the stored schema version in step with the running binary, so an older
-// file is upgraded the first time this build touches it.
+// file is upgraded the first time this build touches it. A file written by a
+// newer build is left alone.
 void refreshSavedCertificateVersion(const SavedCertificate& certificate) {
     if (certificate.version == kVersion) return;
+    if (versionIsNewer(certificate.version, kVersion)) return;
     SavedCertificate updated = certificate;
     updated.version = kVersion;
     saveCertificateFile(updated);
