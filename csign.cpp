@@ -1846,6 +1846,9 @@ void signMachOFile(const fs::path& path, const SignRequest& request) {
 
     const std::vector<uint8_t> rebuilt = image.serialize();
     writeFile(path, rebuilt.data(), rebuilt.size());
+    // Some archives record a non-executable mode for Mach-O files. The device
+    // needs them executable, and the mode is carried into the output archive.
+    chmod(path.string().c_str(), 0755);
 }
 
 // ---------------------------------------------------------------------------
