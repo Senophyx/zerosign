@@ -2971,7 +2971,19 @@ int commandCert(int argc, char** argv) {
     const std::string password = promptHidden("Input password : ");
     std::string name = trimmed(promptLine(
         "Name (for identification only, leave it blank if you want it random) : "));
-    if (name.empty()) name = randomIdentifier();
+    if (name.empty()) {
+        name = randomIdentifier();
+    } else {
+        // The name becomes a file name inside ~/.csign, so it must not be able
+        // to escape that directory.
+        const bool valid = name.front() != '.' &&
+                           std::all_of(name.begin(), name.end(), [](unsigned char c) {
+                               return std::isalnum(c) != 0 || c == '-' || c == '_';
+                           });
+        if (!valid) {
+            die("the name may only contain letters, digits, '-' and '_'");
+        }
+    }
 
     const fs::path pkeySource(expandHome(pkeyInput));
     const fs::path provSource(expandHome(provInput));
