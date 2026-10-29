@@ -3315,8 +3315,6 @@ int commandCert(int argc, char** argv) {
     (void)argv;
 
     const fs::path directory = certificateDirectory();
-    std::error_code ec;
-    fs::create_directories(directory, ec);
 
     SavedCertificate previous;
     const bool hasPrevious = loadSavedCertificate(previous);
@@ -3362,6 +3360,10 @@ int commandCert(int argc, char** argv) {
     // Validate before touching anything in ~/.csign.
     SigningIdentity identity;
     identity.load(pkeySource, provSource, password);
+
+    // The directory is only created once the input is known to be good.
+    std::error_code ec;
+    fs::create_directories(directory, ec);
 
     const fs::path pkeyTarget = directory / (name + ".p12");
     const fs::path provTarget = directory / (name + ".mobileprovision");
