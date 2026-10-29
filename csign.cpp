@@ -3303,6 +3303,7 @@ int commandSign(int argc, char** argv) {
 
 int commandInstall(int argc, char** argv) {
     if (argc < 3) die("missing .ipa path");
+    if (argc > 3) die("unexpected argument: " + std::string(argv[3]));
     const fs::path ipaPath(expandHome(argv[2]));
     if (!fs::is_regular_file(ipaPath)) die("cannot find '" + std::string(argv[2]) + "'");
     installIpa(ipaPath, ipaPath.filename().string());
@@ -3388,6 +3389,7 @@ int commandCert(int argc, char** argv) {
 }
 int commandCheck(int argc, char** argv) {
     if (argc < 3) die("missing .ipa path");
+    if (argc > 3) die("unexpected argument: " + std::string(argv[3]));
     const fs::path ipaPath(expandHome(argv[2]));
     if (!fs::is_regular_file(ipaPath)) die("cannot find '" + std::string(argv[2]) + "'");
 
