@@ -1674,16 +1674,20 @@ std::string buildSignatureBlob(const MachOSlice& slice, const SignRequest& reque
 void growSlice(MachOSlice& slice, uint32_t neededBlobSize) {
     if (slice.linkEditCommandOffset == 0) die("Mach-O file has no __LINKEDIT segment");
 
+    const uint32_t commandEnd = slice.headerSize() + slice.rd32(20);
+    // The injected command lives inside the hashed code region, so the code
+    // limit has to cover it.
     const uint32_t limit = slice.sigCommandOffset != 0
                                ? slice.codeLimit
-                               : alignUp32(static_cast<uint32_t>(slice.data.size()), 16);
+                               : alignUp32(std::max(static_cast<uint32_t>(slice.data.size()),
+                                                    commandEnd + 16),
+                                           16);
     const uint32_t wanted = neededBlobSize > 0 ? neededBlobSize : 128u * 1024u;
     const uint32_t wantedSize = limit + alignUp32(wanted + 4096, 4096);
     const uint32_t oldSize = static_cast<uint32_t>(slice.data.size());
     const uint32_t newSize = std::max(wantedSize, oldSize);
 
     if (!slice.sigCommandOffset) {
-        const uint32_t commandEnd = slice.headerSize() + slice.rd32(20);
         if (slice.loadCommandsFreeSpace < 16) {
             die("not enough load command space to add LC_CODE_SIGNATURE");
         }
