@@ -2276,22 +2276,356 @@ void createArchive(const fs::path& source, const fs::path& archivePath) {
 }
 
 // ---------------------------------------------------------------------------
+// .ipa inspection
+// ---------------------------------------------------------------------------
+
+struct IpaInfo {
+    std::string appDirectory;  // "Payload/Foo.app"
+    std::string infoPlist;
+    std::string bundleId;
+    std::string executable;
+    std::string displayName;
+    std::string version;
+    bool hasCodeResources = false;
+    bool signatureValid = false;
+};
+
+bool sliceHasSignature(const MachOSlice& slice) {
+    if (!slice.parsed || slice.sigCommandOffset == 0) return false;
+    if (slice.signatureSize < sizeof(cs_super_blob_t)) return false;
+    const uint64_t end = static_cast<uint64_t>(slice.codeLimit) + slice.signatureSize;
+    if (end > slice.data.size()) return false;
+
+    const uint8_t* base = slice.data.data() + slice.codeLimit;
+    const uint32_t magic = readBe32(base);
+    if (magic != kCsMagicEmbeddedSignature) return false;
+
+    const uint32_t length =
+        (static_cast<uint32_t>(base[4]) << 24) | (static_cast<uint32_t>(base[5]) << 16) |
+        (static_cast<uint32_t>(base[6]) << 8) | base[7];
+    const uint32_t count =
+        (static_cast<uint32_t>(base[8]) << 24) | (static_cast<uint32_t>(base[9]) << 16) |
+        (static_cast<uint32_t>(base[10]) << 8) | base[11];
+    if (length < 12 || length > slice.signatureSize || count > 32) return false;
+
+    bool hasDirectory = false;
+    bool hasCms = false;
+    for (uint32_t i = 0; i < count; ++i) {
+        const size_t indexOffset = 12 + static_cast<size_t>(i) * 8;
+        if (indexOffset + 8 > length) return false;
+        const uint32_t type = readBe32(base + indexOffset);
+        const uint32_t offset = readBe32(base + indexOffset + 4);
+        if (offset + 8 > length) return false;
+        const uint32_t blobMagic = readBe32(base + offset);
+        const uint32_t blobLength = readBe32(base + offset + 4);
+        if (blobLength < 8 || offset + blobLength > length) return false;
+        if ((type == kCsSlotCodeDirectory ||
+             type == kCsSlotAlternateCodeDirectories) &&
+            blobMagic == kCsMagicCodeDirectory && blobLength > 8) {
+            hasDirectory = true;
+        }
+        if (type == kCsSlotSignature && blobMagic == kCsMagicBlobWrapper) hasCms = true;
+    }
+    return hasDirectory && hasCms;
+}
+
+bool binaryHasSignature(const std::string& bytes) {
+    if (bytes.size() < 8) return false;
+    const uint32_t magic = readBe32(reinterpret_cast<const uint8_t*>(bytes.data()));
+    if (magic == kFatMagic || magic == kFatCigam) {
+        const bool bigEndian = (magic == kFatMagic);
+        auto read32 = [&](size_t offset) -> uint32_t {
+            const uint8_t* p = reinterpret_cast<const uint8_t*>(bytes.data()) + offset;
+            uint32_t value = 0;
+            std::memcpy(&value, p, sizeof(value));
+            return bigEndian ? swap32(value) : value;
+        };
+        if (bytes.size() < 8) return false;
+        const uint32_t count = read32(4);
+        if (count == 0 || count > 64) return false;
+        bool any = false;
+        for (uint32_t i = 0; i < count; ++i) {
+            const size_t entry = 8 + static_cast<size_t>(i) * 20;
+            if (entry + 20 > bytes.size()) return false;
+            const uint32_t offset = read32(entry + 8);
+            const uint32_t size = read32(entry + 12);
+            if (static_cast<size_t>(offset) + size > bytes.size()) return false;
+            MachOSlice slice;
+            slice.data.assign(bytes.begin() + offset, bytes.begin() + offset + size);
+            if (!slice.parse() || !sliceHasSignature(slice)) return false;
+            any = true;
+        }
+        return any;
+    }
+
+    MachOSlice slice;
+    slice.data.assign(bytes.begin(), bytes.end());
+    if (!slice.parse()) return false;
+    return sliceHasSignature(slice);
+}
+
+IpaInfo inspectIpa(const fs::path& ipaPath) {
+    ZipArchive archive;
+    archive.openRead(ipaPath);
+
+    IpaInfo info;
+    const zip_int64_t count = zip_get_num_entries(archive.handle, 0);
+    for (zip_int64_t i = 0; i < count; ++i) {
+        const char* name = zip_get_name(archive.handle, static_cast<zip_uint64_t>(i), 0);
+        if (name == nullptr) continue;
+        const std::string entryName = name;
+        if (entryName.compare(0, 8, "Payload/") != 0) continue;
+        const size_t slash = entryName.find('/', 8);
+        if (slash == std::string::npos) continue;
+        const std::string candidate = entryName.substr(0, slash);
+        if (candidate.size() > 4 &&
+            candidate.compare(candidate.size() - 4, 4, ".app") == 0) {
+            info.appDirectory = candidate;
+            break;
+        }
+    }
+    if (info.appDirectory.empty()) die("no Payload/*.app bundle found in '" + ipaPath.string() + "'");
+
+    if (!archive.readEntry(info.appDirectory + "/Info.plist", info.infoPlist)) {
+        die("'" + ipaPath.string() + "' has no Info.plist");
+    }
+    PlistHolder plist(parsePlist(info.infoPlist));
+    if (plist.node == nullptr) die("cannot parse the Info.plist inside '" + ipaPath.string() + "'");
+
+    info.bundleId = plistString(plist.node, "CFBundleIdentifier");
+    info.executable = plistString(plist.node, "CFBundleExecutable");
+    info.displayName = plistString(plist.node, "CFBundleDisplayName");
+    if (info.displayName.empty()) info.displayName = plistString(plist.node, "CFBundleName");
+    if (info.displayName.empty()) info.displayName = info.executable;
+    info.version = plistString(plist.node, "CFBundleShortVersionString");
+    if (info.version.empty()) info.version = plistString(plist.node, "CFBundleVersion");
+
+    info.hasCodeResources = archive.hasEntry(info.appDirectory + "/_CodeSignature/CodeResources");
+
+    if (!info.executable.empty()) {
+        std::string binary;
+        if (archive.readEntry(info.appDirectory + "/" + info.executable, binary)) {
+            info.signatureValid = binaryHasSignature(binary);
+        }
+    }
+
+    return info;
+}
+
+// ---------------------------------------------------------------------------
+// Device installation
+// ---------------------------------------------------------------------------
+
+struct DeviceSession {
+    idevice_t device = nullptr;
+    lockdownd_client_t lockdown = nullptr;
+    instproxy_client_t instproxy = nullptr;
+    afc_client_t afc = nullptr;
+    std::string name;
+
+    ~DeviceSession() {
+        if (afc != nullptr) afc_client_free(afc);
+        if (instproxy != nullptr) instproxy_client_free(instproxy);
+        if (lockdown != nullptr) lockdownd_client_free(lockdown);
+        if (device != nullptr) idevice_free(device);
+    }
+
+    void open() {
+        const enum idevice_options options = static_cast<enum idevice_options>(
+            IDEVICE_LOOKUP_USBMUX | IDEVICE_LOOKUP_NETWORK);
+        if (idevice_new_with_options(&device, nullptr, options) != IDEVICE_E_SUCCESS) {
+            die("no iOS device found (connect it over USB or make sure Wi-Fi sync is enabled)");
+        }
+
+        if (lockdownd_client_new_with_handshake(device, &lockdown, "csign") !=
+            LOCKDOWN_E_SUCCESS) {
+            die("cannot connect to lockdownd (is the device paired and trusted?)");
+        }
+
+        plist_t deviceName = nullptr;
+        if (lockdownd_get_value(lockdown, nullptr, "DeviceName", &deviceName) ==
+                LOCKDOWN_E_SUCCESS &&
+            deviceName != nullptr) {
+            char* value = nullptr;
+            plist_get_string_val(deviceName, &value);
+            if (value != nullptr) name = value;
+            std::free(value);
+            plist_free(deviceName);
+        }
+        if (name.empty()) name = "device";
+    }
+
+    void startInstallProxy() {
+        lockdownd_service_descriptor_t service = nullptr;
+        if (lockdownd_start_service(lockdown, "com.apple.mobile.installation_proxy", &service) !=
+                LOCKDOWN_E_SUCCESS ||
+            service == nullptr) {
+            die("cannot start the installation proxy service");
+        }
+        const instproxy_error_t error = instproxy_client_new(device, service, &instproxy);
+        lockdownd_service_descriptor_free(service);
+        if (error != INSTPROXY_E_SUCCESS) die("cannot connect to the installation proxy");
+    }
+
+    void startAfc() {
+        lockdownd_service_descriptor_t service = nullptr;
+        if (lockdownd_start_service(lockdown, "com.apple.afc", &service) !=
+                LOCKDOWN_E_SUCCESS ||
+            service == nullptr) {
+            die("cannot start the AFC service");
+        }
+        const afc_error_t error = afc_client_new(device, service, &afc);
+        lockdownd_service_descriptor_free(service);
+        if (error != AFC_E_SUCCESS) die("cannot connect to AFC");
+    }
+
+    void uploadFile(const fs::path& local, const std::string& remote) {
+        FILE* file = std::fopen(local.string().c_str(), "rb");
+        if (file == nullptr) die("cannot read '" + local.string() + "'");
+
+        uint64_t handle = 0;
+        if (afc_file_open(afc, remote.c_str(), AFC_FOPEN_WRONLY, &handle) != AFC_E_SUCCESS) {
+            std::fclose(file);
+            die("cannot open '" + remote + "' on the device");
+        }
+
+        char buffer[1 << 20];
+        size_t read = 0;
+        while ((read = std::fread(buffer, 1, sizeof(buffer), file)) > 0) {
+            size_t written = 0;
+            while (written < read) {
+                uint32_t chunk = 0;
+                if (afc_file_write(afc, handle, buffer + written,
+                                   static_cast<uint32_t>(read - written),
+                                   &chunk) != AFC_E_SUCCESS ||
+                    chunk == 0) {
+                    afc_file_close(afc, handle);
+                    std::fclose(file);
+                    die("cannot upload '" + local.filename().string() + "' to the device");
+                }
+                written += chunk;
+            }
+        }
+        afc_file_close(afc, handle);
+        std::fclose(file);
+    }
+};
+
+struct InstallProgress {
+    std::string label;
+    std::string device;
+    bool completed = false;
+    bool failed = false;
+    std::string error;
+};
+
+void installStatusCallback(plist_t command, plist_t status, void* userData) {
+    InstallProgress* progress = static_cast<InstallProgress*>(userData);
+    if (progress == nullptr || status == nullptr) return;
+
+    char* errorName = nullptr;
+    char* errorDescription = nullptr;
+    uint64_t errorCode = 0;
+    instproxy_status_get_error(status, &errorName, &errorDescription, &errorCode);
+
+    if (errorName != nullptr) {
+        progress->failed = true;
+        std::string message = errorName;
+        if (errorDescription != nullptr) {
+            message += ": ";
+            message += errorDescription;
+        }
+        progress->error = message;
+        std::free(errorName);
+        std::free(errorDescription);
+        return;
+    }
+
+    char* statusName = nullptr;
+    instproxy_status_get_name(status, &statusName);
+    if (statusName != nullptr) {
+        if (std::strcmp(statusName, "Complete") == 0) progress->completed = true;
+        std::free(statusName);
+    }
+
+    int percent = -1;
+    instproxy_status_get_percent_complete(status, &percent);
+    if (percent >= 0) {
+        std::printf("\rInstalling %s to %s: %d%%", progress->label.c_str(),
+                    progress->device.c_str(), percent);
+        std::fflush(stdout);
+    }
+}
+
+void installIpa(const fs::path& ipaPath, const std::string& label) {
+    const IpaInfo info = inspectIpa(ipaPath);
+
+    DeviceSession session;
+    session.open();
+    session.startInstallProxy();
+    session.startAfc();
+
+    char** entries = nullptr;
+    if (afc_get_file_info(session.afc, "PublicStaging", &entries) != AFC_E_SUCCESS) {
+        afc_make_directory(session.afc, "PublicStaging");
+    }
+    if (entries != nullptr) {
+        for (int i = 0; entries[i] != nullptr; ++i) std::free(entries[i]);
+        std::free(entries);
+    }
+
+    const std::string staging = "PublicStaging/" + info.bundleId;
+    std::printf("Installing %s to %s: 0%%", label.c_str(), session.name.c_str());
+    std::fflush(stdout);
+
+    session.uploadFile(ipaPath, staging);
+
+    InstallProgress progress;
+    progress.label = label;
+    progress.device = session.name;
+
+    plist_t options = instproxy_client_options_new();
+    if (!info.bundleId.empty()) {
+        instproxy_client_options_add(options, "CFBundleIdentifier", info.bundleId.c_str(),
+                                     nullptr);
+    }
+    const instproxy_error_t installError =
+        instproxy_install(session.instproxy, staging.c_str(), options, installStatusCallback,
+                          &progress);
+    instproxy_client_options_free(options);
+
+    if (progress.failed) {
+        std::printf("\n");
+        die("installation failed: " + progress.error);
+    }
+    if (installError != INSTPROXY_E_SUCCESS) {
+        std::printf("\n");
+        die("installation failed (installation proxy error " +
+            std::to_string(static_cast<int>(installError)) + ")");
+    }
+
+    std::printf("\n%s successfully installed to %s\n", label.c_str(), session.name.c_str());
+}
+
+// ---------------------------------------------------------------------------
 // Commands
 // ---------------------------------------------------------------------------
 
 void printUsage() {
     std::printf(
-        "csign - sign iOS .ipa packages\n"
+        "csign - sign iOS .ipa packages and install them onto a connected device\n"
         "\n"
         "Usage:\n"
-        "  csign sign <ipa-path> --pkey <p12> --prov <profile> [--password <pw>]\n"
-        "                        [--output <path>]\n"
+        "  csign sign <ipa-path> [--pkey <p12>] [--prov <profile>] [--password <pw>]\n"
+        "                        [--output <path>] [-i]\n"
+        "  csign install <ipa-path>\n"
         "\n"
         "Options:\n"
         "  --pkey <p12>          signing certificate (.p12)\n"
         "  --prov <profile>      provisioning profile (.mobileprovision)\n"
         "  --password <pw>       certificate password (prompted when omitted)\n"
-        "  --output <path>       output path (default: <name>-signed.ipa)\n");
+        "  --output <path>       output path (default: <name>-signed.ipa)\n"
+        "  -i, --install         install right after signing\n");
 }
 
 struct TempDirectory {
@@ -2321,6 +2655,7 @@ int commandSign(int argc, char** argv) {
     std::string password;
     std::string outputPath;
     bool havePassword = false;
+    bool installAfter = false;
 
     for (int i = 2; i < argc; ++i) {
         const std::string argument = argv[i];
@@ -2337,6 +2672,8 @@ int commandSign(int argc, char** argv) {
             havePassword = true;
         } else if (argument == "--output" || argument == "-o") {
             outputPath = takeValue("--output");
+        } else if (argument == "-i" || argument == "--install") {
+            installAfter = true;
         } else if (!argument.empty() && argument[0] == '-') {
             die("unknown option: " + argument);
         } else if (ipaPath.empty()) {
@@ -2399,7 +2736,19 @@ int commandSign(int argc, char** argv) {
 
     createArchive(staging, output);
 
-    std::printf("Successfully signed `%s` to `%s`!\n", ipaPath.c_str(), outputPath.c_str());
+    if (!installAfter) {
+        std::printf("Successfully signed `%s` to `%s`!\n", ipaPath.c_str(), outputPath.c_str());
+    } else {
+        installIpa(output, fs::path(ipaPath).filename().string());
+    }
+    return 0;
+}
+
+int commandInstall(int argc, char** argv) {
+    if (argc < 3) die("missing .ipa path");
+    const fs::path ipaPath(expandHome(argv[2]));
+    if (!fs::is_regular_file(ipaPath)) die("cannot find '" + std::string(argv[2]) + "'");
+    installIpa(ipaPath, ipaPath.filename().string());
     return 0;
 }
 
@@ -2413,6 +2762,7 @@ int main(int argc, char** argv) {
         }
         const std::string command = argv[1];
         if (command == "sign") return commandSign(argc, argv);
+        if (command == "install") return commandInstall(argc, argv);
         if (command == "-h" || command == "--help" || command == "help") {
             printUsage();
             return 0;
