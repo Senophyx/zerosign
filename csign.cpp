@@ -216,7 +216,7 @@ struct cs_code_directory_t {
     uint32_t codeLimit;
     uint8_t hashSize;
     uint8_t hashType;
-    uint8_t spare1;
+    uint8_t platform;
     uint8_t pageSize;
     uint32_t spare2;
     uint32_t scatterOffset;
