@@ -1848,6 +1848,27 @@ void collectNestedBundleDirs(const BundleNode& node, std::set<fs::path>& dirs) {
     }
 }
 
+void collectSymlinks(const fs::path& dir, const std::set<fs::path>& skip,
+                     std::vector<fs::path>& links) {
+    std::error_code ec;
+    std::vector<fs::path> entries;
+    for (fs::directory_iterator it(dir, fs::directory_options::skip_permission_denied, ec), end;
+         !ec && it != end; it.increment(ec)) {
+        entries.push_back(it->path());
+    }
+    std::sort(entries.begin(), entries.end());
+
+    for (const fs::path& entry : entries) {
+        if (skip.count(entry) > 0) continue;
+        std::error_code statusError;
+        if (fs::is_symlink(entry, statusError)) {
+            links.push_back(entry);
+        } else if (fs::is_directory(entry, statusError)) {
+            collectSymlinks(entry, skip, links);
+        }
+    }
+}
+
 void collectFiles(const fs::path& dir, const std::set<fs::path>& skip,
                   std::vector<fs::path>& files) {
     std::error_code ec;
@@ -1861,8 +1882,10 @@ void collectFiles(const fs::path& dir, const std::set<fs::path>& skip,
     for (const fs::path& entry : entries) {
         if (skip.count(entry) > 0) continue;
         std::error_code statusError;
+        // Symbolic links are sealed by target and must never be followed.
+        if (fs::is_symlink(entry, statusError)) continue;
         if (fs::is_directory(entry, statusError)) {
-            if (!fs::is_symlink(entry, statusError)) collectFiles(entry, skip, files);
+            collectFiles(entry, skip, files);
         } else {
             files.push_back(entry);
         }
@@ -1970,12 +1993,14 @@ struct BundleSigner {
         std::vector<std::string> relativePaths;
         relativePaths.reserve(files.size());
         for (const fs::path& file : files) {
-            std::error_code ec;
-            fs::path relative = fs::relative(file, bundleDir, ec);
-            if (ec) continue;
+            const fs::path relative = file.lexically_relative(bundleDir);
+            if (relative.empty()) continue;
             relativePaths.push_back(relative.generic_string());
         }
         std::sort(relativePaths.begin(), relativePaths.end());
+
+        std::vector<fs::path> links;
+        collectSymlinks(bundleDir, empty, links);
 
         PlistHolder root(plist_new_dict());
         if (root.node == nullptr) die("out of memory");
@@ -2025,6 +2050,19 @@ struct BundleSigner {
                 if (isLocalized) plist_dict_set_item(entry, "optional", plist_new_bool(1));
                 plist_dict_set_item(filesV2, relative.c_str(), entry);
             }
+        }
+
+        // Symbolic links are recorded by target, never hashed.
+        for (const fs::path& link : links) {
+            const fs::path relative = link.lexically_relative(bundleDir);
+            if (relative.empty()) continue;
+            std::error_code readError;
+            const fs::path target = fs::read_symlink(link, readError);
+            if (readError) continue;
+            plist_t entry = plist_new_dict();
+            plist_dict_set_item(entry, "symlink",
+                                plist_new_string(target.generic_string().c_str()));
+            plist_dict_set_item(filesV2, relative.generic_string().c_str(), entry);
         }
 
         // Legacy rule table.
