@@ -2566,7 +2566,6 @@ void addDirectoryToArchive(zip_t* archive, const fs::path& root, const fs::path&
                 zip_source_free(source);
                 die("cannot add '" + name + "' to the archive");
             }
-            struct stat info {};
 #ifdef _WIN32
             // Windows stat only reports 0666 or 0444 and loses the Unix
             // executable bit, which would stop a signed app from launching on
@@ -2576,6 +2575,7 @@ void addDirectoryToArchive(zip_t* archive, const fs::path& root, const fs::path&
             zip_file_set_external_attributes(archive, static_cast<zip_uint64_t>(index), 0,
                                              ZIP_OPSYS_UNIX, unixMode << 16);
 #else
+            struct stat info {};
             if (stat(entry.string().c_str(), &info) == 0) {
                 const uint32_t unixMode =
                     kUnixIfreg | (isMachOFile(entry)
