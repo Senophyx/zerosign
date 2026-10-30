@@ -1,0 +1,160 @@
+name: Publish
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version (e.g., 1.0 or v1.0.0)"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+env:
+  RELEASE_VERSION: ${{ inputs.version }}
+
+jobs:
+  build-macos:
+    name: macOS
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: brew install openssl@3 libimobiledevice libplist libzip pkg-config
+
+      - name: Build
+        run: make compile mac
+
+      - name: Verify version
+        run: |
+          expected="${RELEASE_VERSION#v}"
+          actual="$(./csign --version | awk '{print $2}')"
+          if [ "$actual" != "$expected" ]; then
+            echo "::error::csign reports $actual but $expected was requested"
+            exit 1
+          fi
+          echo "verified csign $actual"
+
+      - name: Package
+        run: tar -czf "csign-${RELEASE_VERSION}-macos.tar.gz" csign
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: csign-macos
+          path: csign-${{ inputs.version }}-macos.tar.gz
+
+  build-linux:
+    name: Linux
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential pkg-config libssl-dev \
+            libimobiledevice-dev libplist-dev libzip-dev zlib1g-dev
+
+      - name: Build
+        run: make compile linux
+
+      - name: Verify version
+        run: |
+          expected="${RELEASE_VERSION#v}"
+          actual="$(./csign --version | awk '{print $2}')"
+          if [ "$actual" != "$expected" ]; then
+            echo "::error::csign reports $actual but $expected was requested"
+            exit 1
+          fi
+          echo "verified csign $actual"
+
+      - name: Package
+        run: tar -czf "csign-${RELEASE_VERSION}-linux.tar.gz" csign
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: csign-linux
+          path: csign-${{ inputs.version }}-linux.tar.gz
+
+  build-windows:
+    name: Windows
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-make
+            mingw-w64-x86_64-pkgconf
+            mingw-w64-x86_64-openssl
+            mingw-w64-x86_64-libimobiledevice
+            mingw-w64-x86_64-libplist
+            mingw-w64-x86_64-libzip
+            mingw-w64-x86_64-zlib
+
+      - name: Build
+        run: mingw32-make compile win
+
+      - name: Bundle runtime libraries
+        run: |
+          mkdir -p dist/ossl-modules
+          cp csign.exe dist/
+          ldd csign.exe | grep '/mingw64/bin/' | awk '{print $3}' | sort -u | while read -r dll; do
+            cp "$dll" dist/
+          done
+          # The legacy provider is loaded at run time for older .p12 files.
+          cp /mingw64/lib/ossl-modules/legacy.dll dist/ossl-modules/ 2>/dev/null || true
+          cp /mingw64/lib/ossl-modules/legacy.dll dist/ 2>/dev/null || true
+
+      - name: Verify version
+        run: |
+          expected="${RELEASE_VERSION#v}"
+          actual="$(./dist/csign.exe --version | awk '{print $2}')"
+          if [ "$actual" != "$expected" ]; then
+            echo "::error::csign reports $actual but $expected was requested"
+            exit 1
+          fi
+          echo "verified csign $actual"
+
+      - name: Package
+        shell: pwsh
+        run: Compress-Archive -Path dist\* -DestinationPath "csign-${{ inputs.version }}-windows.zip"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: csign-windows
+          path: csign-${{ inputs.version }}-windows.zip
+
+  publish:
+    name: Publish release
+    needs: [build-macos, build-linux, build-windows]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.version }}
+          name: csign ${{ inputs.version }}
+          generate_release_notes: true
+          files: |
+            artifacts/csign-${{ inputs.version }}-macos.tar.gz
+            artifacts/csign-${{ inputs.version }}-linux.tar.gz
+            artifacts/csign-${{ inputs.version }}-windows.zip
