@@ -277,6 +277,13 @@ constexpr uint64_t kCsExecSegMainBinary = 0x1;
 constexpr uint32_t kCodePageShift = 12;
 constexpr uint32_t kCodePageSize = 1u << kCodePageShift;
 
+// Unix file type bits used in ZIP external attributes. They are spelled out
+// here because Windows system headers do not define S_IFLNK or S_ISLNK.
+constexpr uint32_t kUnixIfmt = 0170000;
+constexpr uint32_t kUnixIfdir = 0040000;
+constexpr uint32_t kUnixIfreg = 0100000;
+constexpr uint32_t kUnixIflnk = 0120000;
+
 // ---------------------------------------------------------------------------
 // Apple public certificate anchors
 // ---------------------------------------------------------------------------
@@ -2456,7 +2463,7 @@ void extractArchive(const fs::path& archivePath, const fs::path& destination) {
         const mode_t mode = (opsys == ZIP_OPSYS_UNIX) ? static_cast<mode_t>(attributes >> 16)
                                                       : static_cast<mode_t>(0644);
 
-        if (declaredDirectory || S_ISDIR(mode)) {
+        if (declaredDirectory || (mode & kUnixIfmt) == kUnixIfdir) {
             fs::create_directories(target, ec);
             continue;
         }
@@ -2473,11 +2480,27 @@ void extractArchive(const fs::path& archivePath, const fs::path& destination) {
         zip_fclose(file);
         if (got < 0) die("cannot read '" + entryName + "' from the archive");
 
-        if (S_ISLNK(mode)) {
+        if ((mode & kUnixIfmt) == kUnixIflnk) {
             fs::remove(target, ec);
+#ifdef _WIN32
+            // Creating a link needs a privilege that ordinary Windows accounts
+            // do not hold, so a failure must not abort the whole extraction.
+            std::error_code linkError;
+            fs::create_symlink(contents, target, linkError);
+            if (linkError) {
+                linkError.clear();
+                fs::create_directory_symlink(contents, target, linkError);
+            }
+            if (linkError) {
+                std::fprintf(stderr,
+                             "warning: cannot create symbolic link '%s'; skipping it\n",
+                             entryName.c_str());
+            }
+#else
             if (symlink(contents.c_str(), target.string().c_str()) != 0) {
                 die("cannot create symbolic link '" + target.string() + "'");
             }
+#endif
             continue;
         }
 
@@ -2531,7 +2554,7 @@ void addDirectoryToArchive(zip_t* archive, const fs::path& root, const fs::path&
                 die("cannot add '" + name + "' to the archive");
             }
             zip_file_set_external_attributes(archive, static_cast<zip_uint64_t>(index), 0,
-                                             ZIP_OPSYS_UNIX, (S_IFLNK | 0777) << 16);
+                                             ZIP_OPSYS_UNIX, (kUnixIflnk | 0777) << 16);
         } else if (fs::is_directory(entry, statusError)) {
             addDirectoryToArchive(archive, root, entry);
         } else {
@@ -2544,11 +2567,24 @@ void addDirectoryToArchive(zip_t* archive, const fs::path& root, const fs::path&
                 die("cannot add '" + name + "' to the archive");
             }
             struct stat info {};
+#ifdef _WIN32
+            // Windows stat only reports 0666 or 0444 and loses the Unix
+            // executable bit, which would stop a signed app from launching on
+            // iOS. Mach-O files are therefore marked executable explicitly.
+            const uint32_t unixMode =
+                kUnixIfreg | (isMachOFile(entry) ? 0755u : 0644u);
+            zip_file_set_external_attributes(archive, static_cast<zip_uint64_t>(index), 0,
+                                             ZIP_OPSYS_UNIX, unixMode << 16);
+#else
             if (stat(entry.string().c_str(), &info) == 0) {
-                zip_file_set_external_attributes(
-                    archive, static_cast<zip_uint64_t>(index), 0, ZIP_OPSYS_UNIX,
-                    static_cast<zip_uint32_t>(info.st_mode & 0777) << 16);
+                const uint32_t unixMode =
+                    kUnixIfreg | (isMachOFile(entry)
+                                      ? 0755u
+                                      : static_cast<uint32_t>(info.st_mode & 0777));
+                zip_file_set_external_attributes(archive, static_cast<zip_uint64_t>(index), 0,
+                                                 ZIP_OPSYS_UNIX, unixMode << 16);
             }
+#endif
         }
     }
 }
