@@ -3309,11 +3309,17 @@ struct TempDirectory {
     fs::path path;
 
     TempDirectory() {
-        std::string pattern = (fs::temp_directory_path() / "csign-XXXXXX").string();
-        std::vector<char> buffer(pattern.begin(), pattern.end());
-        buffer.push_back('\0');
-        if (mkdtemp(buffer.data()) == nullptr) die("cannot create a temporary directory");
-        path = fs::path(buffer.data());
+        // mkdtemp is POSIX only, so the directory is created through the
+        // standard filesystem API with a random name and exclusive creation.
+        const fs::path base = fs::temp_directory_path();
+        for (int attempt = 0; attempt < 32 && path.empty(); ++attempt) {
+            const fs::path candidate = base / ("csign-" + randomIdentifier());
+            std::error_code ec;
+            if (fs::create_directory(candidate, ec) && !ec) {
+                path = candidate;
+            }
+        }
+        if (path.empty()) die("cannot create a temporary directory");
     }
     ~TempDirectory() {
         if (!path.empty()) {
