@@ -10,11 +10,11 @@ Everything lives in `csign.cpp`: Mach-O parsing, code signature generation, bund
 - **Installs to a device** through AFC staging and the installation proxy, with live progress.
 - **Saves a default certificate** in `~/.csign/` so later signing needs no flags.
 - **Inspects a package** without extracting anything to disk.
-- **Portable**: builds and runs on macOS and Linux from the same source.
+- **Portable**: builds and runs on macOS, Linux, and Windows from the same source.
 
 ## Requirements
 
-- A C++17 compiler (`clang++` on macOS, `g++` on Linux).
+- A C++17 compiler (`clang++` on macOS, `g++` on Linux and Windows).
 - `pkg-config` and these libraries:
   - `libcrypto`, `libssl` (OpenSSL 3 or newer)
   - `libimobiledevice-1.0`
@@ -34,16 +34,47 @@ On Debian or Ubuntu:
 sudo apt install build-essential pkg-config libssl-dev libimobiledevice-dev libplist-dev libzip-dev zlib1g-dev
 ```
 
+On Windows, use an MSYS2 MINGW64 shell:
+
+```bash
+pacman -S --needed mingw-w64-x86_64-gcc mingw-w64-x86_64-make \
+    mingw-w64-x86_64-pkgconf mingw-w64-x86_64-openssl \
+    mingw-w64-x86_64-libimobiledevice mingw-w64-x86_64-libplist \
+    mingw-w64-x86_64-libzip mingw-w64-x86_64-zlib
+```
+
+## Install
+
+Every release publishes a prebuilt binary per platform, so building from source is optional.
+
+| Platform | Release asset | Contents |
+| --- | --- | --- |
+| macOS | `csign-<version>-macos.tar.gz` | `csign` |
+| Linux | `csign-<version>-linux.tar.gz` | `csign` |
+| Windows | `csign-<version>-windows.zip` | `csign.exe` plus the runtime DLLs it needs |
+
+On macOS or Linux, unpack the archive and move the binary somewhere on your `PATH`:
+
+```bash
+tar -xzf csign-<version>-linux.tar.gz
+sudo mv csign /usr/local/bin/
+```
+
+On Windows, unpack the zip anywhere, for example `C:\Tools\csign`, and add that folder to your `PATH`. Keep the `.dll` files next to `csign.exe`, because they are loaded at run time.
+
 ## Build
 
 ```bash
-make                 # detects the host OS and builds ./csign
-make compile mac     # clang++ with Homebrew paths
-make compile linux   # g++ with system paths
-make clean           # removes the binary and object files
+make                 # detects the host OS and builds the binary
+make compile mac     # clang++ with Homebrew paths, produces ./csign
+make compile linux   # g++ with system paths, produces ./csign
+make compile win     # g++ with MSYS2 paths, produces ./csign.exe
+make clean           # removes csign, csign.exe, and object files
 ```
 
-The result is a single `csign` executable in the project root.
+`make` picks the target from the host: `Darwin` builds macOS, `MINGW*`, `MSYS*`, `CYGWIN*`, or `Windows_NT` builds Windows, everything else builds Linux.
+
+The result is a single executable in the project root.
 
 ## Usage
 
@@ -53,7 +84,17 @@ csign sign <ipa-path> [--pkey <p12>] [--prov <profile>] [--password <pw>]
 csign install <ipa-path>
 csign cert
 csign check <ipa-path>
+csign --version
 ```
+
+| Option | Meaning |
+| --- | --- |
+| `--pkey <p12>` | signing certificate |
+| `--prov <profile>` | provisioning profile |
+| `--password <pw>` | certificate password, prompted when omitted |
+| `-o, --output <path>` | output path, defaults to `<name>-signed.ipa` |
+| `-i, --install` | install right after signing |
+| `-v, --version` | print the version and exit |
 
 ### Sign a package
 
@@ -136,7 +177,7 @@ The name comes from `CFBundleDisplayName`, falling back to `CFBundleName` and th
 
 ## Saved certificate
 
-`csign cert` copies the certificate and profile into `~/.csign/` and records them in `~/.csign/csign.json`:
+`csign cert` copies the certificate and profile into `~/.csign/` and records them in `~/.csign/csign.json`. On Windows the same folder is `%USERPROFILE%\.csign`.
 
 ```
 ~/.csign/
@@ -197,6 +238,58 @@ If a binary has no room for a larger signature, csign grows the `__LINKEDIT` seg
 - The app bundle identifier should match the profile's `application-id`. A mismatch still produces a valid signature, but the device rejects the install.
 - Encrypted binaries from the App Store cannot be re-signed meaningfully, because their code pages are still encrypted for the original account.
 - macOS reports `CSSMERR_TP_NOT_TRUSTED` when verifying an iOS distribution certificate, since the certificate is not trusted on the desktop. That is expected; the signature itself verifies.
+
+## Uninstall
+
+csign keeps no state outside the binary and its certificate folder, so removing both leaves nothing behind.
+
+### macOS and Linux
+
+Remove the binary. If you installed it to `/usr/local/bin`:
+
+```bash
+sudo rm -f /usr/local/bin/csign
+```
+
+If you keep it somewhere else, remove it from there instead. To find it:
+
+```bash
+which csign
+```
+
+Then delete the saved certificate folder, which also removes the stored password:
+
+```bash
+rm -rf ~/.csign
+```
+
+### Windows
+
+Remove the folder you unpacked csign into, for example:
+
+```powershell
+Remove-Item -Recurse -Force C:\Tools\csign
+```
+
+Then delete the certificate folder:
+
+```powershell
+Remove-Item -Recurse -Force "$env:USERPROFILE\.csign"
+```
+
+If you added the csign folder to your `PATH`, remove that entry as well through **System Properties** > **Environment Variables**.
+
+### Verify it is gone
+
+```bash
+which csign        # macOS and Linux, prints nothing when removed
+ls ~/.csign        # macOS and Linux, should report no such file
+```
+
+```powershell
+Get-Command csign   # Windows, should report nothing
+Test-Path "$env:USERPROFILE\.csign"   # Windows, should print False
+```
 
 ## Acknowledgements
 
