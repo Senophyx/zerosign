@@ -3589,15 +3589,20 @@ int commandCert(int argc, char** argv) {
 
     if (hasPrevious) {
         // Paths come from the stored file, so only remove what really lives in
-        // the certificate directory.
+        // the certificate directory. Both sides are resolved first, because a
+        // stored path may spell the same file differently from the freshly
+        // written target.
         std::error_code resolveError;
         const fs::path resolvedDirectory = fs::weakly_canonical(directory, resolveError);
+        const fs::path resolvedPkeyTarget = fs::weakly_canonical(pkeyTarget, resolveError);
+        const fs::path resolvedProvTarget = fs::weakly_canonical(provTarget, resolveError);
         for (const std::string& oldPath : {previous.pkey, previous.prov}) {
             const fs::path expanded(expandHome(oldPath));
-            if (expanded == pkeyTarget || expanded == provTarget) continue;
             std::error_code entryError;
             const fs::path resolved = fs::weakly_canonical(expanded, entryError);
-            if (entryError || !pathIsWithin(resolvedDirectory, resolved)) continue;
+            if (entryError) continue;
+            if (resolved == resolvedPkeyTarget || resolved == resolvedProvTarget) continue;
+            if (!pathIsWithin(resolvedDirectory, resolved)) continue;
             std::error_code removeError;
             fs::remove(expanded, removeError);
         }
