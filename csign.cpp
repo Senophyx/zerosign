@@ -35,8 +35,16 @@
 
 #include <sys/stat.h>
 #include <sys/types.h>
+
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#else
 #include <termios.h>
 #include <unistd.h>
+#endif
 
 #include <openssl/cms.h>
 #include <openssl/err.h>
@@ -617,6 +625,24 @@ std::string promptHidden(const std::string& label) {
     std::fputs(label.c_str(), stdout);
     std::fflush(stdout);
 
+#ifdef _WIN32
+    const HANDLE input = GetStdHandle(STD_INPUT_HANDLE);
+    DWORD originalMode = 0;
+    bool restore = false;
+    if (input != INVALID_HANDLE_VALUE && GetConsoleMode(input, &originalMode) != 0) {
+        const DWORD hiddenMode = originalMode & ~static_cast<DWORD>(ENABLE_ECHO_INPUT);
+        if (SetConsoleMode(input, hiddenMode) != 0) restore = true;
+    }
+
+    std::string line = readLine();
+
+    if (restore) {
+        SetConsoleMode(input, originalMode);
+        std::fputc('\n', stdout);
+        std::fflush(stdout);
+    }
+    return line;
+#else
     struct termios original {};
     bool restore = false;
     if (isatty(STDIN_FILENO) && tcgetattr(STDIN_FILENO, &original) == 0) {
@@ -633,6 +659,7 @@ std::string promptHidden(const std::string& label) {
         std::fflush(stdout);
     }
     return line;
+#endif
 }
 
 // ---------------------------------------------------------------------------
