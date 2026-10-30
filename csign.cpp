@@ -558,11 +558,20 @@ void writeFile(const fs::path& path, const std::string& data) {
     writeFile(path, data.data(), data.size());
 }
 
+// Resolves the current user's home directory on every supported platform.
+std::string homeDirectory() {
+    const char* home = std::getenv("HOME");
+    if (home != nullptr && *home != '\0') return home;
+#ifdef _WIN32
+    const char* profile = std::getenv("USERPROFILE");
+    if (profile != nullptr && *profile != '\0') return profile;
+#endif
+    die("the home directory is not set");
+}
+
 std::string expandHome(const std::string& value) {
     if (!value.empty() && value[0] == '~') {
-        const char* home = std::getenv("HOME");
-        if (home == nullptr) die("HOME is not set");
-        return std::string(home) + value.substr(1);
+        return homeDirectory() + value.substr(1);
     }
     return value;
 }
@@ -3077,9 +3086,7 @@ void installIpa(const fs::path& ipaPath, const std::string& label) {
 // ---------------------------------------------------------------------------
 
 fs::path certificateDirectory() {
-    const char* home = std::getenv("HOME");
-    if (home == nullptr) die("HOME is not set");
-    return fs::path(home) / ".csign";
+    return fs::path(homeDirectory()) / ".csign";
 }
 
 struct SavedCertificate {
