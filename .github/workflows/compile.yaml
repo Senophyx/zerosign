@@ -63,17 +63,17 @@ jobs:
 
       - uses: msys2/setup-msys2@v2
         with:
-          msystem: MINGW64
+          msystem: UCRT64
           update: true
           install: >-
-            mingw-w64-x86_64-gcc
-            mingw-w64-x86_64-make
-            mingw-w64-x86_64-pkgconf
-            mingw-w64-x86_64-openssl
-            mingw-w64-x86_64-libimobiledevice
-            mingw-w64-x86_64-libplist
-            mingw-w64-x86_64-libzip
-            mingw-w64-x86_64-zlib
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-make
+            mingw-w64-ucrt-x86_64-pkgconf
+            mingw-w64-ucrt-x86_64-openssl
+            mingw-w64-ucrt-x86_64-libimobiledevice
+            mingw-w64-ucrt-x86_64-libplist
+            mingw-w64-ucrt-x86_64-libzip
+            mingw-w64-ucrt-x86_64-zlib
 
       - name: Build
         run: mingw32-make compile win
@@ -82,15 +82,28 @@ jobs:
         run: |
           mkdir -p dist/ossl-modules
           cp csign.exe dist/
-          ldd csign.exe | grep '/mingw64/bin/' | awk '{print $3}' | sort -u | while read -r dll; do
+          ldd csign.exe | grep '/ucrt64/bin/' | awk '{print $3}' | sort -u | while read -r dll; do
             cp "$dll" dist/
           done
           # The legacy provider is loaded at run time for older .p12 files.
-          cp /mingw64/lib/ossl-modules/legacy.dll dist/ossl-modules/ 2>/dev/null || true
-          cp /mingw64/lib/ossl-modules/legacy.dll dist/ 2>/dev/null || true
+          cp /ucrt64/lib/ossl-modules/legacy.dll dist/ossl-modules/ 2>/dev/null || true
+          cp /ucrt64/lib/ossl-modules/legacy.dll dist/ 2>/dev/null || true
+          if [ -z "$(ls dist/*.dll 2>/dev/null)" ]; then
+            echo "::error::no runtime DLLs were bundled"
+            exit 1
+          fi
+          ls -1 dist/
 
-      - name: Verify
-        run: ./dist/csign.exe --version
+      - name: Verify standalone
+        shell: pwsh
+        run: |
+          $env:PATH = "$PWD\dist"
+          $output = & .\dist\csign.exe --version
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "csign.exe failed to start: missing runtime DLL?"
+            exit 1
+          }
+          Write-Host $output
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

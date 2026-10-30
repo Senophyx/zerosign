@@ -34,13 +34,13 @@ On Debian or Ubuntu:
 sudo apt install build-essential pkg-config libssl-dev libimobiledevice-dev libplist-dev libzip-dev zlib1g-dev
 ```
 
-On Windows, use an MSYS2 MINGW64 shell:
+On Windows, use an MSYS2 UCRT64 shell (the `libimobiledevice` package is only built for the UCRT64, CLANG64 and CLANGARM64 environments):
 
 ```bash
-pacman -S --needed mingw-w64-x86_64-gcc mingw-w64-x86_64-make \
-    mingw-w64-x86_64-pkgconf mingw-w64-x86_64-openssl \
-    mingw-w64-x86_64-libimobiledevice mingw-w64-x86_64-libplist \
-    mingw-w64-x86_64-libzip mingw-w64-x86_64-zlib
+pacman -S --needed mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-make \
+    mingw-w64-ucrt-x86_64-pkgconf mingw-w64-ucrt-x86_64-openssl \
+    mingw-w64-ucrt-x86_64-libimobiledevice mingw-w64-ucrt-x86_64-libplist \
+    mingw-w64-ucrt-x86_64-libzip mingw-w64-ucrt-x86_64-zlib
 ```
 
 ## Install

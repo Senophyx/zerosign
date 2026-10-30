@@ -46,7 +46,7 @@ EXTRA_LDFLAGS  := -L$(BREW_PREFIX)/lib -L$(BREW_PREFIX_INTEL)/lib
 else ifeq ($(HOST),win)
 TARGET   := csign.exe
 CXX      := g++
-PKG_PATH := /mingw64/lib/pkgconfig:/mingw64/share/pkgconfig:/usr/local/lib/pkgconfig:/usr/lib/pkgconfig
+PKG_PATH := /ucrt64/lib/pkgconfig:/ucrt64/share/pkgconfig:/mingw64/lib/pkgconfig:/mingw64/share/pkgconfig:/usr/local/lib/pkgconfig:/usr/lib/pkgconfig
 EXTRA_CXXFLAGS :=
 EXTRA_LDFLAGS  :=
 else
