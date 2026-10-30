@@ -2026,8 +2026,8 @@ void scanBundles(const fs::path& dir, BundleNode& node, const fs::path& appRoot)
         }
         BundleNode child;
         child.dir = entry;
-        child.relativePath = fs::relative(entry, appRoot, statusError).string();
-        if (statusError) child.relativePath = entry.filename().string();
+        child.relativePath = fs::relative(entry, appRoot, statusError).generic_string();
+        if (statusError) child.relativePath = entry.filename().generic_string();
         loadBundleInfo(child);
         scanBundles(entry, child, appRoot);
         node.children.push_back(std::move(child));
