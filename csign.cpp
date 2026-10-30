@@ -1338,11 +1338,36 @@ struct SigningIdentity {
         if (entitlements != nullptr) plist_free(entitlements);
     }
 
+    // Loads the providers the CMS and PKCS#12 paths need. The legacy provider is
+    // what unlocks older .p12 files, so failing to find it is reported instead
+    // of silently leaving every password rejected.
+    static void loadProviders() {
+#ifdef _WIN32
+        // OpenSSL looks for provider modules under its compile-time prefix. A
+        // packaged csign.exe keeps them beside the executable instead, so the
+        // search path is pointed there before anything is loaded.
+        char modulePath[MAX_PATH] = {0};
+        if (GetModuleFileNameA(nullptr, modulePath, MAX_PATH) > 0) {
+            const fs::path executableDir = fs::path(modulePath).parent_path();
+            OSSL_PROVIDER_set_default_search_path(nullptr,
+                                                  executableDir.string().c_str());
+        }
+#endif
+
+        // Touching the legacy provider disables the automatic default provider
+        // registration, so both are loaded explicitly.
+        if (OSSL_PROVIDER_load(nullptr, "default") == nullptr) {
+            die("cannot load the OpenSSL default provider");
+        }
+        if (OSSL_PROVIDER_load(nullptr, "legacy") == nullptr) {
+            std::fprintf(stderr,
+                         "warning: the OpenSSL legacy provider is unavailable; "
+                         "older .p12 files may fail to unlock\n");
+        }
+    }
+
     void load(const fs::path& p12Path, const fs::path& profilePath, const std::string& password) {
-        // Explicitly load both providers: touching the legacy provider disables
-        // the automatic default provider registration.
-        OSSL_PROVIDER_load(nullptr, "default");
-        OSSL_PROVIDER_load(nullptr, "legacy");
+        loadProviders();
 
         // --- provisioning profile -----------------------------------------
         profileData = readFile(profilePath);
