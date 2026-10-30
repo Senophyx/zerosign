@@ -1,14 +1,14 @@
-# csign
+# zerosign
 
-A single-file C++ command-line tool that re-signs iOS `.ipa` packages and installs them onto a connected iPhone or iPad over USB or Wi-Fi.
+A zero-dependency, single-file C++ command-line tool that re-signs iOS `.ipa` packages and installs them onto a connected iPhone or iPad over USB or Wi-Fi.
 
-Everything lives in `csign.cpp`: Mach-O parsing, code signature generation, bundle sealing, and the device install protocol. No Xcode, no `codesign`, no platform-specific headers.
+Everything lives in `zerosign.cpp`: Mach-O parsing, code signature generation, bundle sealing, and the device install protocol. No Xcode, no `codesign`, no platform-specific headers.
 
 ## Features
 
 - **Re-signs `.ipa` packages** with a `.p12` certificate and a `.mobileprovision` profile.
 - **Installs to a device** through AFC staging and the installation proxy, with live progress.
-- **Saves a default certificate** in `~/.csign/` so later signing needs no flags.
+- **Saves a default certificate** in `~/.zerosign/` so later signing needs no flags.
 - **Inspects a package** without extracting anything to disk.
 - **Portable**: builds and runs on macOS, Linux, and Windows from the same source.
 
@@ -49,27 +49,27 @@ Every release publishes a prebuilt binary per platform, so building from source 
 
 | Platform | Release asset | Contents |
 | --- | --- | --- |
-| macOS | `csign-<version>-macos.tar.gz` | `csign` |
-| Linux | `csign-<version>-linux.tar.gz` | `csign` |
-| Windows | `csign-<version>-windows.zip` | `csign.exe` plus the runtime DLLs it needs |
+| macOS | `zerosign-<version>-macos.tar.gz` | `zerosign` |
+| Linux | `zerosign-<version>-linux.tar.gz` | `zerosign` |
+| Windows | `zerosign-<version>-windows.zip` | `zerosign.exe` plus the runtime DLLs it needs |
 
 On macOS or Linux, unpack the archive and move the binary somewhere on your `PATH`:
 
 ```bash
-tar -xzf csign-<version>-linux.tar.gz
-sudo mv csign /usr/local/bin/
+tar -xzf zerosign-<version>-linux.tar.gz
+sudo mv zerosign /usr/local/bin/
 ```
 
-On Windows, unpack the zip anywhere, for example `C:\Tools\csign`, and add that folder to your `PATH`. Keep the `.dll` files next to `csign.exe`, because they are loaded at run time.
+On Windows, unpack the zip anywhere, for example `C:\Tools\zerosign`, and add that folder to your `PATH`. Keep the `.dll` files next to `zerosign.exe`, because they are loaded at run time.
 
 ## Build
 
 ```bash
 make                 # detects the host OS and builds the binary
-make compile mac     # clang++ with Homebrew paths, produces ./csign
-make compile linux   # g++ with system paths, produces ./csign
-make compile win     # g++ with MSYS2 paths, produces ./csign.exe
-make clean           # removes csign, csign.exe, and object files
+make compile mac     # clang++ with Homebrew paths, produces ./zerosign
+make compile linux   # g++ with system paths, produces ./zerosign
+make compile win     # g++ with MSYS2 paths, produces ./zerosign.exe
+make clean           # removes zerosign, zerosign.exe, and object files
 ```
 
 `make` picks the target from the host: `Darwin` builds macOS, `MINGW*`, `MSYS*`, `CYGWIN*`, or `Windows_NT` builds Windows, everything else builds Linux.
@@ -79,12 +79,12 @@ The result is a single executable in the project root.
 ## Usage
 
 ```
-csign sign <ipa-path> [--pkey <p12>] [--prov <profile>] [--password <pw>]
+zerosign sign <ipa-path> [--pkey <p12>] [--prov <profile>] [--password <pw>]
                       [--output <path>] [-i]
-csign install <ipa-path>
-csign cert
-csign check <ipa-path>
-csign --version
+zerosign install <ipa-path>
+zerosign cert
+zerosign check <ipa-path>
+zerosign --version
 ```
 
 | Option | Meaning |
@@ -101,7 +101,7 @@ csign --version
 With an explicit certificate:
 
 ```bash
-csign sign app.ipa --pkey cert.p12 --prov cert.mobileprovision --password test
+zerosign sign app.ipa --pkey cert.p12 --prov cert.mobileprovision --password test
 ```
 
 ```
@@ -111,11 +111,11 @@ Successfully signed `app.ipa` to `./path/to/app-signed.ipa`!
 The output defaults to the input directory and base name with `-signed.ipa` appended. Use `--output` to choose the exact path:
 
 ```bash
-csign sign app.ipa --pkey cert.p12 --prov cert.mobileprovision --password test \
+zerosign sign app.ipa --pkey cert.p12 --prov cert.mobileprovision --password test \
     --output ~/Downloads/app.ipa
 ```
 
-If `--password` is omitted, csign prompts for it without echoing:
+If `--password` is omitted, zerosign prompts for it without echoing:
 
 ```
 Input Password :
@@ -123,10 +123,10 @@ Input Password :
 
 ### Sign with the saved certificate
 
-After `csign cert` has stored a certificate, both flags can be left out:
+After `zerosign cert` has stored a certificate, both flags can be left out:
 
 ```bash
-csign sign app.ipa
+zerosign sign app.ipa
 ```
 
 ```
@@ -137,7 +137,7 @@ Successfully signed `app.ipa` to `./path/to/app-signed.ipa`!
 ### Install a package
 
 ```bash
-csign install app-signed.ipa
+zerosign install app-signed.ipa
 ```
 
 ```
@@ -150,7 +150,7 @@ The device name is read from the connected device, and the percentage updates wh
 ### Sign and install in one step
 
 ```bash
-csign sign app.ipa -i
+zerosign sign app.ipa -i
 ```
 
 ```
@@ -161,7 +161,7 @@ app.ipa successfully installed to <device-name>
 ### Inspect a package
 
 ```bash
-csign check app.ipa
+zerosign check app.ipa
 ```
 
 ```
@@ -177,11 +177,11 @@ The name comes from `CFBundleDisplayName`, falling back to `CFBundleName` and th
 
 ## Saved certificate
 
-`csign cert` copies the certificate and profile into `~/.csign/` and records them in `~/.csign/csign.json`. On Windows the same folder is `%USERPROFILE%\.csign`.
+`zerosign cert` copies the certificate and profile into `~/.zerosign/` and records them in `~/.zerosign/zerosign.json`. On Windows the same folder is `%USERPROFILE%\.zerosign`.
 
 ```
-~/.csign/
-├── csign.json
+~/.zerosign/
+├── zerosign.json
 ├── <unique-name>.p12
 └── <unique-name>.mobileprovision
 ```
@@ -191,8 +191,8 @@ The name comes from `CFBundleDisplayName`, falling back to `CFBundleName` and th
     "version": "1.0",
     "certificate": {
         "name": "main",
-        "pkey": "~/.csign/main.p12",
-        "prov": "~/.csign/main.mobileprovision",
+        "pkey": "~/.zerosign/main.p12",
+        "prov": "~/.zerosign/main.mobileprovision",
         "password": "password"
     }
 }
@@ -206,16 +206,16 @@ Input .mobileprovision file : ./main.mobileprovision
 Input password : 1
 Name (for identification only, leave it blank if you want it random) :
 
-Success! Saved to ~/.csign/
+Success! Saved to ~/.zerosign/
 ```
 
-Leave the name blank to get a random identifier. The certificate and profile are validated before anything is written, so a wrong password or a mismatched pair leaves the existing entry untouched. If a certificate is already saved, csign asks before replacing it; answering anything other than `y` aborts without changing anything.
+Leave the name blank to get a random identifier. The certificate and profile are validated before anything is written, so a wrong password or a mismatched pair leaves the existing entry untouched. If a certificate is already saved, zerosign asks before replacing it; answering anything other than `y` aborts without changing anything.
 
-The password is stored in plain text inside `~/.csign/csign.json`, because signing needs it without prompting. Keep that directory private.
+The password is stored in plain text inside `~/.zerosign/zerosign.json`, because signing needs it without prompting. Keep that directory private.
 
 ## How signing works
 
-For every code bundle in the package, csign:
+For every code bundle in the package, zerosign:
 
 1. Signs nested code first, deepest bundles outward, so the outer seal hashes final bytes.
 2. Signs loose Mach-O files inside the bundle.
@@ -230,7 +230,7 @@ Each Mach-O image gets an embedded `SuperBlob` containing:
 - the entitlements, in both plist and DER form, on the app executable only,
 - a CMS signature over the code directory, carrying the Apple intermediate and root certificates.
 
-If a binary has no room for a larger signature, csign grows the `__LINKEDIT` segment and injects or resizes `LC_CODE_SIGNATURE`. Universal binaries are rebuilt with each slice re-aligned and the fat header updated.
+If a binary has no room for a larger signature, zerosign grows the `__LINKEDIT` segment and injects or resizes `LC_CODE_SIGNATURE`. Universal binaries are rebuilt with each slice re-aligned and the fat header updated.
 
 ## Notes and limits
 
@@ -241,59 +241,59 @@ If a binary has no room for a larger signature, csign grows the `__LINKEDIT` seg
 
 ## Uninstall
 
-csign keeps no state outside the binary and its certificate folder, so removing both leaves nothing behind.
+zerosign keeps no state outside the binary and its certificate folder, so removing both leaves nothing behind.
 
 ### macOS and Linux
 
 Remove the binary. If you installed it to `/usr/local/bin`:
 
 ```bash
-sudo rm -f /usr/local/bin/csign
+sudo rm -f /usr/local/bin/zerosign
 ```
 
 If you keep it somewhere else, remove it from there instead. To find it:
 
 ```bash
-which csign
+which zerosign
 ```
 
 Then delete the saved certificate folder, which also removes the stored password:
 
 ```bash
-rm -rf ~/.csign
+rm -rf ~/.zerosign
 ```
 
 ### Windows
 
-Remove the folder you unpacked csign into, for example:
+Remove the folder you unpacked zerosign into, for example:
 
 ```powershell
-Remove-Item -Recurse -Force C:\Tools\csign
+Remove-Item -Recurse -Force C:\Tools\zerosign
 ```
 
 Then delete the certificate folder:
 
 ```powershell
-Remove-Item -Recurse -Force "$env:USERPROFILE\.csign"
+Remove-Item -Recurse -Force "$env:USERPROFILE\.zerosign"
 ```
 
-If you added the csign folder to your `PATH`, remove that entry as well through **System Properties** > **Environment Variables**.
+If you added the zerosign folder to your `PATH`, remove that entry as well through **System Properties** > **Environment Variables**.
 
 ### Verify it is gone
 
 ```bash
-which csign        # macOS and Linux, prints nothing when removed
-ls ~/.csign        # macOS and Linux, should report no such file
+which zerosign        # macOS and Linux, prints nothing when removed
+ls ~/.zerosign        # macOS and Linux, should report no such file
 ```
 
 ```powershell
-Get-Command csign   # Windows, should report nothing
-Test-Path "$env:USERPROFILE\.csign"   # Windows, should print False
+Get-Command zerosign   # Windows, should report nothing
+Test-Path "$env:USERPROFILE\.zerosign"   # Windows, should print False
 ```
 
 ## Acknowledgements
 
-Special thanks to the creators and contributors of the following projects, which served as great references during the development of `csign`:
+Special thanks to the creators and contributors of the following projects, which served as great references during the development of `zerosign`:
 
 * [zsign](https://github.com/zhlynn/zsign) – Valuable reference for Mach-O binary structure, code signing, and bundle validation.
 * [ideviceinstaller](https://github.com/libimobiledevice/ideviceinstaller) – Helpful reference for iOS device communication, AFC staging, and the app installation lifecycle.

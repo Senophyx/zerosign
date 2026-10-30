@@ -17,13 +17,13 @@ jobs:
         run: make compile mac
 
       - name: Verify
-        run: ./csign --version
+        run: ./zerosign --version
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: csign-macos
-          path: ./csign
+          name: zerosign-macos
+          path: ./zerosign
 
   build-linux:
     name: Linux
@@ -41,13 +41,13 @@ jobs:
         run: make compile linux
 
       - name: Verify
-        run: ./csign --version
+        run: ./zerosign --version
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: csign-linux
-          path: ./csign
+          name: zerosign-linux
+          path: ./zerosign
 
   build-windows:
     name: Windows
@@ -78,8 +78,8 @@ jobs:
       - name: Bundle runtime libraries
         run: |
           mkdir -p dist/ossl-modules
-          cp csign.exe dist/
-          ldd csign.exe | grep '/ucrt64/bin/' | awk '{print $3}' | sort -u | while read -r dll; do
+          cp zerosign.exe dist/
+          ldd zerosign.exe | grep '/ucrt64/bin/' | awk '{print $3}' | sort -u | while read -r dll; do
             cp "$dll" dist/
           done
           # The legacy provider is loaded at run time for older .p12 files.
@@ -95,9 +95,9 @@ jobs:
         shell: pwsh
         run: |
           $env:PATH = "$PWD\dist"
-          $output = & .\dist\csign.exe --version
+          $output = & .\dist\zerosign.exe --version
           if ($LASTEXITCODE -ne 0) {
-            Write-Error "csign.exe failed to start: missing runtime DLL?"
+            Write-Error "zerosign.exe failed to start: missing runtime DLL?"
             exit 1
           }
           Write-Host $output
@@ -105,5 +105,5 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: csign-windows
+          name: zerosign-windows
           path: dist/

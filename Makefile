@@ -1,12 +1,12 @@
-# csign build system.
+# zerosign build system.
 #
 #   make                  auto-detect the host OS and build the binary
-#   make compile mac      build ./csign with clang++ and Homebrew paths
-#   make compile linux    build ./csign with g++ and system paths
-#   make compile win      build ./csign.exe with g++ (MSYS2/MinGW-w64)
+#   make compile mac      build ./zerosign with clang++ and Homebrew paths
+#   make compile linux    build ./zerosign with g++ and system paths
+#   make compile win      build ./zerosign.exe with g++ (MSYS2/MinGW-w64)
 #   make clean            remove build artifacts
 
-SOURCES := csign.cpp
+SOURCES := zerosign.cpp
 
 BREW_PREFIX       ?= /opt/homebrew
 BREW_PREFIX_INTEL ?= /usr/local
@@ -38,7 +38,7 @@ override HOST := win
 endif
 
 ifeq ($(HOST),mac)
-TARGET   := csign
+TARGET   := zerosign
 CXX      := clang++
 PKG_PATH := $(BREW_PREFIX)/opt/openssl@3/lib/pkgconfig:$(BREW_PREFIX)/lib/pkgconfig:$(BREW_PREFIX_INTEL)/opt/openssl@3/lib/pkgconfig:$(BREW_PREFIX_INTEL)/lib/pkgconfig:/usr/lib/pkgconfig
 # $(BREW_PREFIX)/include/openssl is a symlink to whichever OpenSSL the prefix
@@ -56,13 +56,13 @@ MAC_LIBS     := $(wildcard $(BREW_PREFIX)/opt/openssl@3/lib) \
 EXTRA_CXXFLAGS := $(addprefix -I,$(MAC_INCLUDES))
 EXTRA_LDFLAGS  := $(addprefix -L,$(MAC_LIBS))
 else ifeq ($(HOST),win)
-TARGET   := csign.exe
+TARGET   := zerosign.exe
 CXX      := g++
 PKG_PATH := /ucrt64/lib/pkgconfig:/ucrt64/share/pkgconfig:/mingw64/lib/pkgconfig:/mingw64/share/pkgconfig:/usr/local/lib/pkgconfig:/usr/lib/pkgconfig
 EXTRA_CXXFLAGS :=
 EXTRA_LDFLAGS  :=
 else
-TARGET   := csign
+TARGET   := zerosign
 CXX      := g++
 PKG_PATH := /usr/local/lib/pkgconfig:/usr/lib/x86_64-linux-gnu/pkgconfig:/usr/lib/aarch64-linux-gnu/pkgconfig:/usr/lib/pkgconfig:/usr/share/pkgconfig
 EXTRA_CXXFLAGS :=
@@ -110,4 +110,4 @@ win:
 	@:
 
 clean:
-	rm -f csign csign.exe *.o
+	rm -f zerosign zerosign.exe *.o

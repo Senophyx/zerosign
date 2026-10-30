@@ -19,8 +19,8 @@ jobs:
       - name: Build
         run: make compile mac
 
-      - name: Run csign
-        run: ./csign --version
+      - name: Run zerosign
+        run: ./zerosign --version
 
   check-linux:
     name: Linux
@@ -37,8 +37,8 @@ jobs:
       - name: Build
         run: make compile linux
 
-      - name: Run csign
-        run: ./csign --version
+      - name: Run zerosign
+        run: ./zerosign --version
 
   check-windows:
     name: Windows
@@ -66,5 +66,5 @@ jobs:
       - name: Build
         run: mingw32-make compile win
 
-      - name: Run csign
-        run: ./csign.exe --version
+      - name: Run zerosign
+        run: ./zerosign.exe --version

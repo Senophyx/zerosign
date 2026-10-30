@@ -30,21 +30,21 @@ jobs:
       - name: Verify version
         run: |
           expected="${RELEASE_VERSION#v}"
-          actual="$(./csign --version | awk '{print $2}')"
+          actual="$(./zerosign --version | awk '{print $2}')"
           if [ "$actual" != "$expected" ]; then
-            echo "::error::csign reports $actual but $expected was requested"
+            echo "::error::zerosign reports $actual but $expected was requested"
             exit 1
           fi
-          echo "verified csign $actual"
+          echo "verified zerosign $actual"
 
       - name: Package
-        run: tar -czf "csign-${RELEASE_VERSION}-macos.tar.gz" csign
+        run: tar -czf "zerosign-${RELEASE_VERSION}-macos.tar.gz" zerosign
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: csign-macos
-          path: csign-${{ inputs.version }}-macos.tar.gz
+          name: zerosign-macos
+          path: zerosign-${{ inputs.version }}-macos.tar.gz
 
   build-linux:
     name: Linux
@@ -64,21 +64,21 @@ jobs:
       - name: Verify version
         run: |
           expected="${RELEASE_VERSION#v}"
-          actual="$(./csign --version | awk '{print $2}')"
+          actual="$(./zerosign --version | awk '{print $2}')"
           if [ "$actual" != "$expected" ]; then
-            echo "::error::csign reports $actual but $expected was requested"
+            echo "::error::zerosign reports $actual but $expected was requested"
             exit 1
           fi
-          echo "verified csign $actual"
+          echo "verified zerosign $actual"
 
       - name: Package
-        run: tar -czf "csign-${RELEASE_VERSION}-linux.tar.gz" csign
+        run: tar -czf "zerosign-${RELEASE_VERSION}-linux.tar.gz" zerosign
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: csign-linux
-          path: csign-${{ inputs.version }}-linux.tar.gz
+          name: zerosign-linux
+          path: zerosign-${{ inputs.version }}-linux.tar.gz
 
   build-windows:
     name: Windows
@@ -109,8 +109,8 @@ jobs:
       - name: Bundle runtime libraries
         run: |
           mkdir -p dist/ossl-modules
-          cp csign.exe dist/
-          ldd csign.exe | grep '/ucrt64/bin/' | awk '{print $3}' | sort -u | while read -r dll; do
+          cp zerosign.exe dist/
+          ldd zerosign.exe | grep '/ucrt64/bin/' | awk '{print $3}' | sort -u | while read -r dll; do
             cp "$dll" dist/
           done
           # The legacy provider is loaded at run time for older .p12 files.
@@ -126,28 +126,28 @@ jobs:
         shell: pwsh
         run: |
           $env:PATH = "$PWD\dist"
-          $output = & .\dist\csign.exe --version
+          $output = & .\dist\zerosign.exe --version
           if ($LASTEXITCODE -ne 0) {
-            Write-Error "csign.exe failed to start: missing runtime DLL?"
+            Write-Error "zerosign.exe failed to start: missing runtime DLL?"
             exit 1
           }
           $actual = ($output -split '\s+')[1]
           $expected = "${{ inputs.version }}" -replace '^v', ''
           if ($actual -ne $expected) {
-            Write-Error "csign reports $actual but $expected was requested"
+            Write-Error "zerosign reports $actual but $expected was requested"
             exit 1
           }
-          Write-Host "verified csign $actual"
+          Write-Host "verified zerosign $actual"
 
       - name: Package
         shell: pwsh
-        run: Compress-Archive -Path dist\* -DestinationPath "csign-${{ inputs.version }}-windows.zip"
+        run: Compress-Archive -Path dist\* -DestinationPath "zerosign-${{ inputs.version }}-windows.zip"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: csign-windows
-          path: csign-${{ inputs.version }}-windows.zip
+          name: zerosign-windows
+          path: zerosign-${{ inputs.version }}-windows.zip
 
   publish:
     name: Publish release
@@ -164,9 +164,9 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ inputs.version }}
-          name: csign ${{ inputs.version }}
+          name: zerosign ${{ inputs.version }}
           generate_release_notes: true
           files: |
-            artifacts/csign-${{ inputs.version }}-macos.tar.gz
-            artifacts/csign-${{ inputs.version }}-linux.tar.gz
-            artifacts/csign-${{ inputs.version }}-windows.zip
+            artifacts/zerosign-${{ inputs.version }}-macos.tar.gz
+            artifacts/zerosign-${{ inputs.version }}-linux.tar.gz
+            artifacts/zerosign-${{ inputs.version }}-windows.zip

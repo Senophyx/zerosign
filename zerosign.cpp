@@ -1,15 +1,15 @@
-// csign - cross-platform iOS .ipa signer and USB/Wi-Fi installer.
+// zerosign - cross-platform iOS .ipa signer and USB/Wi-Fi installer.
 //
 // Single-file C++17 implementation. Everything needed to re-sign an .ipa
 // (Mach-O parsing, code signature generation, bundle sealing) and to push the
 // result to a connected device (lockdownd, AFC, installation proxy) lives here.
 //
 // Supported commands:
-//   csign sign <ipa> [--pkey <p12>] [--prov <profile>] [--password <pw>]
+//   zerosign sign <ipa> [--pkey <p12>] [--prov <profile>] [--password <pw>]
 //                    [--output <path>] [-i]
-//   csign install <ipa>
-//   csign cert
-//   csign check <ipa>
+//   zerosign install <ipa>
+//   zerosign cert
+//   zerosign check <ipa>
 
 #include <algorithm>
 #include <cctype>
@@ -1344,7 +1344,7 @@ struct SigningIdentity {
     static void loadProviders() {
 #ifdef _WIN32
         // OpenSSL looks for provider modules under its compile-time prefix. A
-        // packaged csign.exe keeps them beside the executable instead, so the
+        // packaged zerosign.exe keeps them beside the executable instead, so the
         // search path is pointed there before anything is loaded.
         char modulePath[MAX_PATH] = {0};
         if (GetModuleFileNameA(nullptr, modulePath, MAX_PATH) > 0) {
@@ -1569,12 +1569,12 @@ struct SigningIdentity {
             if (days < 0) {
                 std::fprintf(stderr,
                              "warning: bundled Apple certificate '%s' has expired; "
-                             "update csign\n",
+                             "update zerosign\n",
                              name.c_str());
             } else if (days < 90) {
                 std::fprintf(stderr,
                              "warning: bundled Apple certificate '%s' expires in %d days; "
-                             "update csign\n",
+                             "update zerosign\n",
                              name.c_str(), days);
             }
         }
@@ -2930,7 +2930,7 @@ struct DeviceSession {
             die("no iOS device found (connect it over USB or make sure Wi-Fi sync is enabled)");
         }
 
-        if (lockdownd_client_new_with_handshake(device, &lockdown, "csign") !=
+        if (lockdownd_client_new_with_handshake(device, &lockdown, "zerosign") !=
             LOCKDOWN_E_SUCCESS) {
             die("cannot connect to lockdownd (is the device paired and trusted?)");
         }
@@ -3143,11 +3143,11 @@ void installIpa(const fs::path& ipaPath, const std::string& label) {
 }
 
 // ---------------------------------------------------------------------------
-// Saved certificate store (~/.csign)
+// Saved certificate store (~/.zerosign)
 // ---------------------------------------------------------------------------
 
 fs::path certificateDirectory() {
-    return fs::path(homeDirectory()) / ".csign";
+    return fs::path(homeDirectory()) / ".zerosign";
 }
 
 struct SavedCertificate {
@@ -3252,7 +3252,7 @@ bool jsonObjectSlice(const std::string& source, const std::string& key, std::str
 }
 
 bool loadSavedCertificate(SavedCertificate& certificate) {
-    const fs::path path = certificateDirectory() / "csign.json";
+    const fs::path path = certificateDirectory() / "zerosign.json";
     std::string contents;
     if (!readFileIfExists(path, contents)) return false;
 
@@ -3291,7 +3291,7 @@ void saveCertificateFile(const SavedCertificate& certificate) {
     json += "        \"password\": \"" + jsonEscape(certificate.password) + "\"\n";
     json += "    }\n";
     json += "}\n";
-    writeFile(directory / "csign.json", json);
+    writeFile(directory / "zerosign.json", json);
 }
 
 // True when the dotted version in a is strictly newer than the one in b.
@@ -3343,18 +3343,18 @@ std::string randomIdentifier() {
 // Commands
 // ---------------------------------------------------------------------------
 
-void printVersion() { std::printf("csign %s\n", kVersion); }
+void printVersion() { std::printf("zerosign %s\n", kVersion); }
 
 void printUsage(std::FILE* stream) {
     std::fprintf(stream,
-        "csign %s - sign and install iOS apps directly to your device\n"
+        "zerosign %s - sign and install iOS apps directly to your device\n"
         "\n"
         "Usage:\n"
-        "  csign sign <ipa-path> [--pkey <p12>] [--prov <profile>] [--password <pw>]\n"
+        "  zerosign sign <ipa-path> [--pkey <p12>] [--prov <profile>] [--password <pw>]\n"
         "                        [--output <path>] [-i]\n"
-        "  csign install <ipa-path>\n"
-        "  csign cert\n"
-        "  csign check <ipa-path>\n"
+        "  zerosign install <ipa-path>\n"
+        "  zerosign cert\n"
+        "  zerosign check <ipa-path>\n"
         "\n"
         "Options:\n"
         "  --pkey <p12>          signing certificate (.p12)\n"
@@ -3374,7 +3374,7 @@ struct TempDirectory {
         // standard filesystem API with a random name and exclusive creation.
         const fs::path base = fs::temp_directory_path();
         for (int attempt = 0; attempt < 32 && path.empty(); ++attempt) {
-            const fs::path candidate = base / ("csign-" + randomIdentifier());
+            const fs::path candidate = base / ("zerosign-" + randomIdentifier());
             std::error_code ec;
             if (fs::create_directory(candidate, ec) && !ec) {
                 path = candidate;
@@ -3433,7 +3433,7 @@ int commandSign(int argc, char** argv) {
     bool usingSaved = false;
     if (pkeyPath.empty() && provPath.empty()) {
         if (!loadSavedCertificate(saved)) {
-            die("no certificate saved yet, run 'csign cert' or pass --pkey and --prov");
+            die("no certificate saved yet, run 'zerosign cert' or pass --pkey and --prov");
         }
         pkeyPath = expandHome(saved.pkey);
         provPath = expandHome(saved.prov);
@@ -3542,7 +3542,7 @@ int commandCert(int argc, char** argv) {
     if (name.empty()) {
         name = randomIdentifier();
     } else {
-        // The name becomes a file name inside ~/.csign, so it must not be able
+        // The name becomes a file name inside ~/.zerosign, so it must not be able
         // to escape that directory.
         const bool valid = name.front() != '.' &&
                            std::all_of(name.begin(), name.end(), [](unsigned char c) {
@@ -3558,7 +3558,7 @@ int commandCert(int argc, char** argv) {
     if (!fs::is_regular_file(pkeySource)) die("cannot find '" + pkeyInput + "'");
     if (!fs::is_regular_file(provSource)) die("cannot find '" + provInput + "'");
 
-    // Validate before touching anything in ~/.csign.
+    // Validate before touching anything in ~/.zerosign.
     SigningIdentity identity;
     identity.load(pkeySource, provSource, password);
 
@@ -3582,8 +3582,8 @@ int commandCert(int argc, char** argv) {
 
     SavedCertificate certificate;
     certificate.name = name;
-    certificate.pkey = "~/.csign/" + name + ".p12";
-    certificate.prov = "~/.csign/" + name + ".mobileprovision";
+    certificate.pkey = "~/.zerosign/" + name + ".p12";
+    certificate.prov = "~/.zerosign/" + name + ".mobileprovision";
     certificate.password = password;
     saveCertificateFile(certificate);
 
@@ -3608,7 +3608,7 @@ int commandCert(int argc, char** argv) {
         }
     }
 
-    std::printf("\nSuccess! Saved to ~/.csign/\n");
+    std::printf("\nSuccess! Saved to ~/.zerosign/\n");
     return 0;
 }
 int commandCheck(int argc, char** argv) {

@@ -51,7 +51,7 @@ install_manifest.txt
 compile_commands.json
 
 # Project artifacts
-csign
+zerosign
 *.ipa
 *.ipa.*
 .DS_Store
