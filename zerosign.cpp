@@ -1338,22 +1338,11 @@ struct SigningIdentity {
         if (entitlements != nullptr) plist_free(entitlements);
     }
 
-    // Loads the providers the CMS and PKCS#12 paths need. The legacy provider is
-    // what unlocks older .p12 files, so failing to find it is reported instead
-    // of silently leaving every password rejected.
+    // Loads the providers the CMS and PKCS#12 paths need. The build links
+    // libcrypto.a with the legacy provider compiled in, so both resolve without
+    // any module file next to the binary, and the legacy provider is what
+    // unlocks older .p12 files.
     static void loadProviders() {
-#ifdef _WIN32
-        // OpenSSL looks for provider modules under its compile-time prefix. A
-        // packaged zerosign.exe keeps them beside the executable instead, so the
-        // search path is pointed there before anything is loaded.
-        char modulePath[MAX_PATH] = {0};
-        if (GetModuleFileNameA(nullptr, modulePath, MAX_PATH) > 0) {
-            const fs::path executableDir = fs::path(modulePath).parent_path();
-            OSSL_PROVIDER_set_default_search_path(nullptr,
-                                                  executableDir.string().c_str());
-        }
-#endif
-
         // Touching the legacy provider disables the automatic default provider
         // registration, so both are loaded explicitly.
         if (OSSL_PROVIDER_load(nullptr, "default") == nullptr) {
