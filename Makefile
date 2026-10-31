@@ -107,14 +107,14 @@ else ifeq ($(HOST),win)
 TARGET   := zerosign.exe
 CXX      := g++
 CMAKE_GENERATOR := -G Ninja
-# UCRT64 only: libimobiledevice is packaged for UCRT64, CLANG64 and CLANGARM64,
+# Native CMake and gcc cannot read the /d/a/... mount form, so the prefix is
+# handed to them as D:/a/... which both the shell and the tools accept. It has
+# to be set before PKG_PATH, which expands it immediately.
+DEPS_ABS := $(shell cygpath -m "$(abspath $(DEPS_PREFIX))" 2>/dev/null || echo "$(abspath $(DEPS_PREFIX))")# UCRT64 only: libimobiledevice is packaged for UCRT64, CLANG64 and CLANGARM64,
 # and mixing the MINGW64 archives into a UCRT64 link breaks the link. pkgconf
 # here is a native binary, and the msys2 runtime rewrites a ':' path list for
 # programs it spawns, so the POSIX separator stays.
 PKG_PATH := $(DEPS_ABS)/lib/pkgconfig:/ucrt64/lib/pkgconfig:/ucrt64/share/pkgconfig
-# Native CMake and gcc cannot read the /d/a/... mount form, so the prefix is
-# handed to them as D:/a/... which both the shell and the tools accept.
-DEPS_ABS := $(shell cygpath -m "$(abspath $(DEPS_PREFIX))")
 # The static archives carry no __declspec(dllimport) stubs.
 EXTRA_CXXFLAGS := -I$(DEPS_ABS)/include -DLIBIMOBILEDEVICE_STATIC -DLIBUSBMUXD_STATIC -DLIBPLIST_STATIC -DZIP_STATIC
 EXTRA_LDFLAGS  := -static -static-libgcc -static-libstdc++
