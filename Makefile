@@ -3,15 +3,15 @@
 #   make                  auto-detect the host OS and build the standalone binary
 #   make compile mac      build ./zerosign with clang++ (macOS)
 #   make compile linux    build ./zerosign with g++ (Linux)
-#   make compile win      build ./zerosign.exe with g++ (MSYS2/MinGW-w64)
+#   make compile win      build ./zerosign.exe with g++ (MSYS2 UCRT64)
 #   make deps             build the static third-party archives only
 #   make clean            remove the binary and the whole build directory
 #
 # Every host links the third-party libraries statically, so the result is one
-# file with no companion .dylib, .so, or .dll. OpenSSL is built from source
-# here because the packaged archives ship the "legacy" provider as a loadable
-# module, and a module is an external file. Built with no-module it lives
-# inside libcrypto.a and older .p12 files unlock on a clean machine.
+# file with no companion .dylib, .so, or .dll. OpenSSL is always built from
+# source because the packaged archives ship the "legacy" provider as a loadable
+# module, and a module is an external file. Built with no-module it lives inside
+# libcrypto.a, so older .p12 files unlock on a clean machine.
 
 SOURCES := zerosign.cpp
 
@@ -21,13 +21,21 @@ DEPS_PREFIX := $(BUILD_DIR)/prefix
 DEPS_STAMP  := $(DEPS_PREFIX)/.built
 DEPS_ABS    := $(abspath $(DEPS_PREFIX))
 
-OPENSSL_VERSION  ?= 3.5.9
-LIBZIP_VERSION   ?= 1.12.1
-LIBPLIST_VERSION ?= 2.8.0
+OPENSSL_VERSION          ?= 3.5.9
+LIBZIP_VERSION           ?= 1.12.1
+LIBPLIST_VERSION         ?= 2.8.0
+LIMD_GLUE_VERSION        ?= 1.3.3
+LIBUSBMUXD_VERSION       ?= 2.1.1
+LIBIMOBILEDEVICE_VERSION ?= 1.3.0
 
-OPENSSL_URL  := https://github.com/openssl/openssl/releases/download/openssl-$(OPENSSL_VERSION)/openssl-$(OPENSSL_VERSION).tar.gz
-LIBZIP_URL   := https://github.com/nih-at/libzip/releases/download/v$(LIBZIP_VERSION)/libzip-$(LIBZIP_VERSION).tar.gz
-LIBPLIST_URL := https://github.com/libimobiledevice/libplist/releases/download/$(LIBPLIST_VERSION)/libplist-$(LIBPLIST_VERSION).tar.bz2
+OPENSSL_URL := https://github.com/openssl/openssl/releases/download/openssl-$(OPENSSL_VERSION)/openssl-$(OPENSSL_VERSION).tar.gz
+LIBZIP_URL  := https://github.com/nih-at/libzip/releases/download/v$(LIBZIP_VERSION)/libzip-$(LIBZIP_VERSION).tar.gz
+# libimobiledevice and friends share one release layout.
+imd_release = https://github.com/libimobiledevice/$(1)/releases/download/$(2)/$(1)-$(2).tar.bz2
+LIBPLIST_URL         := $(call imd_release,libplist,$(LIBPLIST_VERSION))
+LIMD_GLUE_URL        := $(call imd_release,libimobiledevice-glue,$(LIMD_GLUE_VERSION))
+LIBUSBMUXD_URL       := $(call imd_release,libusbmuxd,$(LIBUSBMUXD_VERSION))
+LIBIMOBILEDEVICE_URL := $(call imd_release,libimobiledevice,$(LIBIMOBILEDEVICE_VERSION))
 
 BREW_PREFIX       ?= /opt/homebrew
 BREW_PREFIX_INTEL ?= /usr/local
@@ -83,42 +91,70 @@ LIBZIP_OPTIONS := -DBUILD_SHARED_LIBS=OFF -DBUILD_TOOLS=OFF -DBUILD_REGRESS=OFF 
                   -DENABLE_GNUTLS=OFF -DENABLE_MBEDTLS=OFF \
                   -DENABLE_COMMONCRYPTO=OFF -DENABLE_WINDOWS_CRYPTO=OFF
 
+PKG_SEP := :
+
 ifeq ($(HOST),mac)
 TARGET   := zerosign
 CXX      := clang++
-PKG_SEP  := :
-CMAKE_GENERATOR :=
 PKG_PATH := $(DEPS_ABS)/lib/pkgconfig:$(BREW_PREFIX)/lib/pkgconfig:$(BREW_PREFIX_INTEL)/lib/pkgconfig:/usr/lib/pkgconfig
 EXTRA_CXXFLAGS := -I$(DEPS_ABS)/include
 EXTRA_LDFLAGS  :=
 EXTRA_LDLIBS   :=
+# ld64 re-scans an archive until nothing new resolves, so no linker group.
+ARCHIVE_OPEN   :=
 else ifeq ($(HOST),win)
 TARGET   := zerosign.exe
 CXX      := g++
-PKG_SEP  := ;
 CMAKE_GENERATOR := -G Ninja
-PKG_PATH := $(DEPS_ABS)/lib/pkgconfig
-# The static archives were built without __declspec(dllimport) stubs.
+# UCRT64 only: libimobiledevice is packaged for UCRT64, CLANG64 and CLANGARM64,
+# and mixing the MINGW64 archives into a UCRT64 link breaks the link. pkgconf
+# here is a native binary, and the msys2 runtime rewrites a ':' path list for
+# programs it spawns, so the POSIX separator stays.
+PKG_PATH := $(DEPS_ABS)/lib/pkgconfig:/ucrt64/lib/pkgconfig:/ucrt64/share/pkgconfig
+# Native CMake and gcc cannot read the /d/a/... mount form, so the prefix is
+# handed to them as D:/a/... which both the shell and the tools accept.
+DEPS_ABS := $(shell cygpath -m "$(abspath $(DEPS_PREFIX))")
+# The static archives carry no __declspec(dllimport) stubs.
 EXTRA_CXXFLAGS := -I$(DEPS_ABS)/include -DLIBIMOBILEDEVICE_STATIC -DLIBUSBMUXD_STATIC -DLIBPLIST_STATIC -DZIP_STATIC
 EXTRA_LDFLAGS  := -static -static-libgcc -static-libstdc++
 EXTRA_LDLIBS   := -lws2_32 -lcrypt32 -liphlpapi -lbcrypt -lgdi32 -luserenv -ladvapi32 -lole32
+ARCHIVE_OPEN   := -Wl,--start-group
+ARCHIVE_CLOSE  := -Wl,--end-group
 else
 TARGET   := zerosign
 CXX      := g++
-PKG_SEP  := :
 CMAKE_GENERATOR :=
 PKG_PATH := $(DEPS_ABS)/lib/pkgconfig:/usr/local/lib/pkgconfig:/usr/lib/x86_64-linux-gnu/pkgconfig:/usr/lib/aarch64-linux-gnu/pkgconfig:/usr/lib/pkgconfig:/usr/share/pkgconfig
 EXTRA_CXXFLAGS := -I$(DEPS_ABS)/include
 EXTRA_LDFLAGS  := -static-libgcc -static-libstdc++
 EXTRA_LDLIBS   := -ldl -lpthread -lm
+# GNU ld walks the link line once, so archives that reference each other need a
+# group to be rescanned.
+ARCHIVE_OPEN   := -Wl,--start-group
+ARCHIVE_CLOSE  := -Wl,--end-group
 endif
 
-# Debian and Ubuntu ship no libplist archive, so Linux builds it here. Every
-# host builds OpenSSL and libzip, which keeps all three platforms identical.
+# Debian and Ubuntu build libimobiledevice against GnuTLS and ship no static
+# archive for it, so Linux compiles the whole device stack here against the
+# OpenSSL built below. macOS and Windows take the packaged archives, which are
+# already OpenSSL based and already static.
 DEPS_TARGETS := $(DEPS_PREFIX)/.openssl-$(OPENSSL_VERSION) $(DEPS_PREFIX)/.libzip-$(LIBZIP_VERSION)
 ifeq ($(HOST),linux)
-DEPS_TARGETS += $(DEPS_PREFIX)/.libplist-$(LIBPLIST_VERSION)
+DEPS_TARGETS += $(DEPS_PREFIX)/.libimobiledevice-$(LIBIMOBILEDEVICE_VERSION)
 endif
+
+# Configures, builds and installs one release tarball as static archives.
+#   $(1) log and stamp name, $(2) source url, $(3) extra configure arguments
+define build_autotools_deps
+	@mkdir -p $(DEPS_SRC) $(DEPS_PREFIX)
+	curl -fsSL $(2) | tar -xj -C $(DEPS_SRC)
+	cd $(DEPS_SRC)/$(basename $(basename $(notdir $(2)))) && \
+	    PKG_CONFIG_PATH=$(DEPS_ABS)/lib/pkgconfig ./configure --prefix=$(DEPS_ABS) \
+	    --disable-shared --enable-static $(3) > $(BUILD_DIR)/$(1).log 2>&1
+	$(MAKE) -C $(DEPS_SRC)/$(basename $(basename $(notdir $(2)))) -j$(JOBS) >> $(BUILD_DIR)/$(1).log 2>&1 || { tail -n 40 $(BUILD_DIR)/$(1).log; exit 1; }
+	$(MAKE) -C $(DEPS_SRC)/$(basename $(basename $(notdir $(2)))) install >> $(BUILD_DIR)/$(1).log 2>&1
+	@touch $(DEPS_PREFIX)/.$(1)
+endef
 
 # Kept apart from CXXFLAGS so a value from the environment cannot drop the
 # language standard this project needs.
@@ -138,25 +174,24 @@ $(TARGET): $(SOURCES) $(DEPS_STAMP)
 	cflags=$$(pkg-config --cflags $(PKGS)); \
 	libs=$$(pkg-config --static --libs $(PKGS)); \
 	dirs="$(DEPS_ABS)/lib"; \
-	tokens=""; \
-	for tok in $$libs; do \
-	  case "$$tok" in -L*) dirs="$$dirs $${tok#-L}";; *) tokens="$$tokens $$tok";; esac; \
-	done; \
+	for p in $(PKGS); do dirs="$$dirs $$(pkg-config --variable=libdir $$p)"; done; \
 	archives=""; \
-	for tok in $$tokens; do \
+	for tok in $$libs; do \
 	  case "$$tok" in \
+	    -L*) dirs="$$dirs $${tok#-L}";; \
 	    -l*) name=$${tok#-l}; found=""; \
 	         for d in $$dirs; do \
 	           if [ -f "$$d/lib$$name.a" ]; then found="$$d/lib$$name.a"; break; fi; \
 	         done; \
 	         if [ -z "$$found" ]; then found=$$tok; fi; \
-	         case " $$archives " in *" $$found "*) ;; *) archives="$$archives $$found";; esac;; \
+	         archives="$$archives $$found";; \
 	    *) archives="$$archives $$tok";; \
 	  esac; \
 	done; \
 	echo "$(CXX) -o $(TARGET)"; \
 	for a in $$archives; do echo "  $$a"; done; \
-	$(CXX) $(CXXSTD) $(CXXFLAGS) $(EXTRA_CXXFLAGS) $$cflags -o $(TARGET) $(SOURCES) $$archives $(EXTRA_LDFLAGS) $(EXTRA_LDLIBS)
+	$(CXX) $(CXXSTD) $(CXXFLAGS) $(EXTRA_CXXFLAGS) $$cflags -o $(TARGET) $(SOURCES) \
+	    $(ARCHIVE_OPEN) $$archives $(ARCHIVE_CLOSE) $(EXTRA_LDFLAGS) $(EXTRA_LDLIBS)
 
 deps: $(DEPS_STAMP)
 
@@ -181,14 +216,22 @@ $(DEPS_PREFIX)/.libzip-$(LIBZIP_VERSION):
 	cmake --install $(BUILD_DIR)/libzip >> $(BUILD_DIR)/libzip.log 2>&1
 	@touch $@
 
-$(DEPS_PREFIX)/.libplist-$(LIBPLIST_VERSION):
-	@mkdir -p $(DEPS_SRC) $(DEPS_PREFIX)
-	curl -fsSL $(LIBPLIST_URL) | tar -xj -C $(DEPS_SRC)
-	cd $(DEPS_SRC)/libplist-$(LIBPLIST_VERSION) && ./configure --prefix=$(DEPS_ABS) \
-	    --disable-shared --enable-static --without-cython > $(BUILD_DIR)/libplist.log 2>&1
-	$(MAKE) -C $(DEPS_SRC)/libplist-$(LIBPLIST_VERSION) -j$(JOBS) >> $(BUILD_DIR)/libplist.log 2>&1 || { tail -n 40 $(BUILD_DIR)/libplist.log; exit 1; }
-	$(MAKE) -C $(DEPS_SRC)/libplist-$(LIBPLIST_VERSION) install >> $(BUILD_DIR)/libplist.log 2>&1
-	@touch $@
+LIBPLIST_STAMP         := $(DEPS_PREFIX)/.libplist-$(LIBPLIST_VERSION)
+LIMD_GLUE_STAMP        := $(DEPS_PREFIX)/.libimobiledevice-glue-$(LIMD_GLUE_VERSION)
+LIBUSBMUXD_STAMP       := $(DEPS_PREFIX)/.libusbmuxd-$(LIBUSBMUXD_VERSION)
+LIBIMOBILEDEVICE_STAMP := $(DEPS_PREFIX)/.libimobiledevice-$(LIBIMOBILEDEVICE_VERSION)
+
+$(LIBPLIST_STAMP):
+	$(call build_autotools_deps,libplist-$(LIBPLIST_VERSION),$(LIBPLIST_URL),--without-cython)
+
+$(LIMD_GLUE_STAMP): $(LIBPLIST_STAMP)
+	$(call build_autotools_deps,libimobiledevice-glue-$(LIMD_GLUE_VERSION),$(LIMD_GLUE_URL),)
+
+$(LIBUSBMUXD_STAMP): $(LIBPLIST_STAMP) $(LIMD_GLUE_STAMP)
+	$(call build_autotools_deps,libusbmuxd-$(LIBUSBMUXD_VERSION),$(LIBUSBMUXD_URL),)
+
+$(LIBIMOBILEDEVICE_STAMP): $(LIBPLIST_STAMP) $(LIMD_GLUE_STAMP) $(LIBUSBMUXD_STAMP) $(DEPS_PREFIX)/.openssl-$(OPENSSL_VERSION)
+	$(call build_autotools_deps,libimobiledevice-$(LIBIMOBILEDEVICE_VERSION),$(LIBIMOBILEDEVICE_URL),--without-cython)
 
 # No-op goal markers so the explicit compile targets stay clean.
 mac:
