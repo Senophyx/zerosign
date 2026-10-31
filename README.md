@@ -12,46 +12,19 @@ Everything lives in `zerosign.cpp`: Mach-O parsing, code signature generation, b
 - **Inspects a package** without extracting anything to disk.
 - **Portable**: builds and runs on macOS, Linux, and Windows from the same source.
 
-## Requirements
-
-- A C++17 compiler (`clang++` on macOS, `g++` on Linux and Windows).
-- `pkg-config` and these libraries:
-  - `libcrypto`, `libssl` (OpenSSL 3 or newer)
-  - `libimobiledevice-1.0`
-  - `libplist-2.0`
-  - `libzip`
-  - `zlib`
-
-On macOS with Homebrew:
-
-```bash
-brew install openssl@3 libimobiledevice libplist libzip
-```
-
-On Debian or Ubuntu:
-
-```bash
-sudo apt install build-essential pkg-config libssl-dev libimobiledevice-dev libplist-dev libzip-dev zlib1g-dev
-```
-
-On Windows, use an MSYS2 UCRT64 shell (the `libimobiledevice` package is only built for the UCRT64, CLANG64 and CLANGARM64 environments):
-
-```bash
-pacman -S --needed mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-make \
-    mingw-w64-ucrt-x86_64-pkgconf mingw-w64-ucrt-x86_64-openssl \
-    mingw-w64-ucrt-x86_64-libimobiledevice mingw-w64-ucrt-x86_64-libplist \
-    mingw-w64-ucrt-x86_64-libzip mingw-w64-ucrt-x86_64-zlib
-```
-
 ## Install
 
-Every release publishes a prebuilt binary per platform, so building from source is optional.
+Every release publishes one standalone executable per platform. It carries all
+third-party libraries inside, so it runs on a clean machine: no Homebrew, no apt
+packages, no MSYS2, and no companion `.dylib`, `.so`, or `.dll` file next to it.
+Only the operating system USB service is still expected, namely `usbmuxd` on
+macOS and Linux and Apple Mobile Device Support on Windows.
 
 | Platform | Release asset | Contents |
 | --- | --- | --- |
 | macOS | `zerosign-<version>-macos.tar.gz` | `zerosign` |
 | Linux | `zerosign-<version>-linux.tar.gz` | `zerosign` |
-| Windows | `zerosign-<version>-windows.zip` | `zerosign.exe` plus the runtime DLLs it needs |
+| Windows | `zerosign-<version>-windows.zip` | `zerosign.exe` |
 
 On macOS or Linux, unpack the archive and move the binary somewhere on your `PATH`:
 
@@ -60,21 +33,72 @@ tar -xzf zerosign-<version>-linux.tar.gz
 sudo mv zerosign /usr/local/bin/
 ```
 
-On Windows, unpack the zip anywhere, for example `C:\Tools\zerosign`, and add that folder to your `PATH`. Keep the `.dll` files next to `zerosign.exe`, because they are loaded at run time.
+On Windows, unpack the zip anywhere, for example `C:\Tools\zerosign`, and add
+that folder to your `PATH`. The executable is self-contained.
 
-## Build
+## Building from source
+
+Requirements:
+
+- A C++17 compiler (`clang++` on macOS, `g++` on Linux and Windows).
+- `make`, `pkg-config`, `cmake`, and `curl`.
+- These development packages:
+  - `libimobiledevice-1.0`
+  - `libplist-2.0`
+  - `libusbmuxd-2.0`
+- OpenSSL 3 and libzip are downloaded and compiled by the build itself, so no
+  package manager version of either is used. OpenSSL is built with the `legacy`
+  provider compiled into `libcrypto.a`, which is what lets older `.p12`
+  certificates unlock without an external provider module.
+
+On macOS with Homebrew:
+
+```bash
+brew install libimobiledevice libplist pkg-config cmake
+```
+
+On Debian or Ubuntu (`libplist` has no static archive in these distributions,
+so the build compiles it from source):
+
+```bash
+sudo apt install build-essential pkg-config cmake zlib1g-dev libimobiledevice-dev libusbmuxd-dev
+```
+
+On Windows, use an MSYS2 UCRT64 shell (the `libimobiledevice` package is only built for the UCRT64, CLANG64 and CLANGARM64 environments):
+
+```bash
+pacman -S --needed perl curl tar mingw-w64-ucrt-x86_64-gcc \
+    mingw-w64-ucrt-x86_64-make mingw-w64-ucrt-x86_64-pkgconf \
+    mingw-w64-ucrt-x86_64-cmake mingw-w64-ucrt-x86_64-ninja \
+    mingw-w64-ucrt-x86_64-libimobiledevice mingw-w64-ucrt-x86_64-libplist \
+    mingw-w64-ucrt-x86_64-libusbmuxd mingw-w64-ucrt-x86_64-zlib
+```
+
+Then build:
 
 ```bash
 make                 # detects the host OS and builds the binary
 make compile mac     # clang++ with Homebrew paths, produces ./zerosign
 make compile linux   # g++ with system paths, produces ./zerosign
 make compile win     # g++ with MSYS2 paths, produces ./zerosign.exe
-make clean           # removes zerosign, zerosign.exe, and object files
+make deps            # only builds the static archives under build/prefix
+make clean           # removes the binary and the whole build/ directory
 ```
 
 `make` picks the target from the host: `Darwin` builds macOS, `MINGW*`, `MSYS*`, `CYGWIN*`, or `Windows_NT` builds Windows, everything else builds Linux.
 
-The result is a single executable in the project root.
+The first build downloads and compiles OpenSSL, libzip, and on Linux libplist
+into `build/prefix`; later builds reuse it. Everything is linked statically, so
+the result is a single executable in the project root that you can copy to
+another machine of the same platform and run as is.
+
+To confirm the binary carries no third-party shared library:
+
+```bash
+otool -L ./zerosign      # macOS: no /opt/homebrew or /usr/local entries
+ldd ./zerosign           # Linux: only glibc entries
+ldd ./zerosign.exe       # Windows: only C:\Windows system DLLs
+```
 
 ## Usage
 
