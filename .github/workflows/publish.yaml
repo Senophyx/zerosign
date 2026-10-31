@@ -63,8 +63,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential pkg-config cmake zlib1g-dev \
-            libimobiledevice-dev libusbmuxd-dev
+          sudo apt-get install -y build-essential pkg-config cmake curl zlib1g-dev
 
       - name: Build
         run: make compile linux
@@ -72,7 +71,7 @@ jobs:
       - name: Verify zero dependencies
         run: |
           ldd ./zerosign
-          if ldd ./zerosign | grep -E 'lib(imobiledevice|plist|zip|crypto|ssl|usbmuxd|glue|zstd|bz2|lzma)'; then
+          if ldd ./zerosign | grep -E 'lib(imobiledevice|plist|zip|crypto|ssl|usbmuxd|glue|zstd|bz2|lzma|z)\.so'; then
             echo "::error::zerosign links a third-party shared library"
             exit 1
           fi
