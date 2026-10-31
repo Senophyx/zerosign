@@ -42,26 +42,26 @@ Requirements:
 
 - A C++17 compiler (`clang++` on macOS, `g++` on Linux and Windows).
 - `make`, `pkg-config`, `cmake`, and `curl`.
-- These development packages:
-  - `libimobiledevice-1.0`
-  - `libplist-2.0`
-  - `libusbmuxd-2.0`
-- OpenSSL 3 and libzip are downloaded and compiled by the build itself, so no
-  package manager version of either is used. OpenSSL is built with the `legacy`
-  provider compiled into `libcrypto.a`, which is what lets older `.p12`
-  certificates unlock without an external provider module.
 
-On macOS with Homebrew:
+Some libraries are compiled by the build itself, so no package manager version
+of them is used: OpenSSL 3, libzip, and on Linux the whole device stack
+(`libplist`, `libimobiledevice-glue`, `libusbmuxd`, `libimobiledevice`). OpenSSL
+is built with the `legacy` provider compiled into `libcrypto.a`, which is what
+lets older `.p12` certificates unlock without an external provider module.
+
+macOS takes the device stack from Homebrew, which already builds it against
+OpenSSL and ships static archives:
 
 ```bash
 brew install libimobiledevice libplist pkg-config cmake
 ```
 
-On Debian or Ubuntu (`libplist` has no static archive in these distributions,
-so the build compiles it from source):
+On Debian or Ubuntu the distribution builds `libimobiledevice` against GnuTLS
+and ships no static archive for `libplist`, so the build compiles that stack from
+source instead. No device library has to be installed:
 
 ```bash
-sudo apt install build-essential pkg-config cmake zlib1g-dev libimobiledevice-dev libusbmuxd-dev
+sudo apt install build-essential pkg-config cmake curl zlib1g-dev
 ```
 
 On Windows, use an MSYS2 UCRT64 shell (the `libimobiledevice` package is only built for the UCRT64, CLANG64 and CLANGARM64 environments):
@@ -80,23 +80,23 @@ Then build:
 make                 # detects the host OS and builds the binary
 make compile mac     # clang++ with Homebrew paths, produces ./zerosign
 make compile linux   # g++ with system paths, produces ./zerosign
-make compile win     # g++ with MSYS2 paths, produces ./zerosign.exe
+make compile win     # g++ with MSYS2 UCRT64 paths, produces ./zerosign.exe
 make deps            # only builds the static archives under build/prefix
 make clean           # removes the binary and the whole build/ directory
 ```
 
 `make` picks the target from the host: `Darwin` builds macOS, `MINGW*`, `MSYS*`, `CYGWIN*`, or `Windows_NT` builds Windows, everything else builds Linux.
 
-The first build downloads and compiles OpenSSL, libzip, and on Linux libplist
-into `build/prefix`; later builds reuse it. Everything is linked statically, so
-the result is a single executable in the project root that you can copy to
-another machine of the same platform and run as is.
+The first build downloads and compiles the libraries into `build/prefix`; later
+builds reuse it. Everything is linked statically, so the result is a single
+executable in the project root that you can copy to another machine of the same
+platform and run as is.
 
 To confirm the binary carries no third-party shared library:
 
 ```bash
 otool -L ./zerosign      # macOS: no /opt/homebrew or /usr/local entries
-ldd ./zerosign           # Linux: only glibc entries
+ldd ./zerosign           # Linux: only glibc entries, no libz/libcrypto
 ldd ./zerosign.exe       # Windows: only C:\Windows system DLLs
 ```
 
