@@ -11,13 +11,21 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install dependencies
-        run: brew install openssl@3 libimobiledevice libplist libzip pkg-config
+        run: brew install libimobiledevice libplist pkg-config cmake
 
       - name: Build
         run: make compile mac
 
       - name: Verify
         run: ./zerosign --version
+
+      - name: Verify zero dependencies
+        run: |
+          otool -L ./zerosign
+          if otool -L ./zerosign | grep -E '/opt/homebrew|/usr/local'; then
+            echo "::error::zerosign links a library outside the base system"
+            exit 1
+          fi
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -34,14 +42,22 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential pkg-config libssl-dev \
-            libimobiledevice-dev libplist-dev libzip-dev zlib1g-dev
+          sudo apt-get install -y build-essential pkg-config cmake zlib1g-dev \
+            libimobiledevice-dev libusbmuxd-dev
 
       - name: Build
         run: make compile linux
 
       - name: Verify
         run: ./zerosign --version
+
+      - name: Verify zero dependencies
+        run: |
+          ldd ./zerosign
+          if ldd ./zerosign | grep -E 'lib(imobiledevice|plist|zip|crypto|ssl|usbmuxd|glue|zstd|bz2|lzma)'; then
+            echo "::error::zerosign links a third-party shared library"
+            exit 1
+          fi
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -63,47 +79,35 @@ jobs:
           msystem: UCRT64
           update: true
           install: >-
+            perl
+            curl
+            tar
             mingw-w64-ucrt-x86_64-gcc
             mingw-w64-ucrt-x86_64-make
             mingw-w64-ucrt-x86_64-pkgconf
-            mingw-w64-ucrt-x86_64-openssl
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-ninja
             mingw-w64-ucrt-x86_64-libimobiledevice
             mingw-w64-ucrt-x86_64-libplist
-            mingw-w64-ucrt-x86_64-libzip
+            mingw-w64-ucrt-x86_64-libusbmuxd
             mingw-w64-ucrt-x86_64-zlib
 
       - name: Build
         run: mingw32-make compile win
 
-      - name: Bundle runtime libraries
+      - name: Verify
+        run: ./zerosign.exe --version
+
+      - name: Verify zero dependencies
         run: |
-          mkdir -p dist/ossl-modules
-          cp zerosign.exe dist/
-          ldd zerosign.exe | grep '/ucrt64/bin/' | awk '{print $3}' | sort -u | while read -r dll; do
-            cp "$dll" dist/
-          done
-          # The legacy provider is loaded at run time for older .p12 files.
-          cp /ucrt64/lib/ossl-modules/legacy.dll dist/ossl-modules/ 2>/dev/null || true
-          cp /ucrt64/lib/ossl-modules/legacy.dll dist/ 2>/dev/null || true
-          if [ -z "$(ls dist/*.dll 2>/dev/null)" ]; then
-            echo "::error::no runtime DLLs were bundled"
+          ldd ./zerosign.exe
+          if ldd ./zerosign.exe | grep -Ei '/(ucrt64|mingw64|clang64)/'; then
+            echo "::error::zerosign.exe links a toolchain DLL"
             exit 1
           fi
-          ls -1 dist/
-
-      - name: Verify standalone
-        shell: pwsh
-        run: |
-          $env:PATH = "$PWD\dist"
-          $output = & .\dist\zerosign.exe --version
-          if ($LASTEXITCODE -ne 0) {
-            Write-Error "zerosign.exe failed to start: missing runtime DLL?"
-            exit 1
-          }
-          Write-Host $output
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: zerosign-windows
-          path: dist/
+          path: ./zerosign.exe
