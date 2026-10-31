@@ -20,6 +20,7 @@ DEPS_SRC    := $(BUILD_DIR)/src
 DEPS_PREFIX := $(BUILD_DIR)/prefix
 DEPS_STAMP  := $(DEPS_PREFIX)/.built
 DEPS_ABS    := $(abspath $(DEPS_PREFIX))
+LOG_DIR     := $(abspath $(BUILD_DIR))
 
 OPENSSL_VERSION          ?= 3.5.9
 LIBZIP_VERSION           ?= 1.12.1
@@ -145,16 +146,26 @@ endif
 
 # Configures, builds and installs one release tarball as static archives.
 #   $(1) log and stamp name, $(2) source url, $(3) extra configure arguments
+#   $(4) optional fixup run inside the extracted tree
+# The log path is absolute because the recipe changes directory first.
 define build_autotools_deps
 	@mkdir -p $(DEPS_SRC) $(DEPS_PREFIX)
 	curl -fsSL $(2) | tar -xj -C $(DEPS_SRC)
+	$(4)
 	cd $(DEPS_SRC)/$(basename $(basename $(notdir $(2)))) && \
 	    PKG_CONFIG_PATH=$(DEPS_ABS)/lib/pkgconfig ./configure --prefix=$(DEPS_ABS) \
-	    --disable-shared --enable-static $(3) > $(BUILD_DIR)/$(1).log 2>&1
-	$(MAKE) -C $(DEPS_SRC)/$(basename $(basename $(notdir $(2)))) -j$(JOBS) >> $(BUILD_DIR)/$(1).log 2>&1 || { tail -n 40 $(BUILD_DIR)/$(1).log; exit 1; }
-	$(MAKE) -C $(DEPS_SRC)/$(basename $(basename $(notdir $(2)))) install >> $(BUILD_DIR)/$(1).log 2>&1
+	    --disable-shared --enable-static $(3) > $(LOG_DIR)/$(1).log 2>&1
+	$(MAKE) -C $(DEPS_SRC)/$(basename $(basename $(notdir $(2)))) -j$(JOBS) >> $(LOG_DIR)/$(1).log 2>&1 || { tail -n 40 $(LOG_DIR)/$(1).log; exit 1; }
+	$(MAKE) -C $(DEPS_SRC)/$(basename $(basename $(notdir $(2)))) install >> $(LOG_DIR)/$(1).log 2>&1
 	@touch $(DEPS_PREFIX)/.$(1)
 endef
+
+# libimobiledevice 1.3.0 still declares its own plist_format_t, which libplist
+# now ships in plist.h, so the declaration is dropped and the shipped type used.
+# Upstream fixed this by moving the helpers into libimobiledevice-glue.
+IMD_FIXUP := cd $(DEPS_SRC)/libimobiledevice-$(LIBIMOBILEDEVICE_VERSION) && \
+	    sed -i '/^enum plist_format_t {$$/,/^};$$/d' common/utils.h && \
+	    sed -i 's/enum plist_format_t format/plist_format_t format/' common/utils.h common/utils.c
 
 # Kept apart from CXXFLAGS so a value from the environment cannot drop the
 # language standard this project needs.
@@ -231,7 +242,7 @@ $(LIBUSBMUXD_STAMP): $(LIBPLIST_STAMP) $(LIMD_GLUE_STAMP)
 	$(call build_autotools_deps,libusbmuxd-$(LIBUSBMUXD_VERSION),$(LIBUSBMUXD_URL),)
 
 $(LIBIMOBILEDEVICE_STAMP): $(LIBPLIST_STAMP) $(LIMD_GLUE_STAMP) $(LIBUSBMUXD_STAMP) $(DEPS_PREFIX)/.openssl-$(OPENSSL_VERSION)
-	$(call build_autotools_deps,libimobiledevice-$(LIBIMOBILEDEVICE_VERSION),$(LIBIMOBILEDEVICE_URL),--without-cython)
+	$(call build_autotools_deps,libimobiledevice-$(LIBIMOBILEDEVICE_VERSION),$(LIBIMOBILEDEVICE_URL),--without-cython,$(IMD_FIXUP))
 
 # No-op goal markers so the explicit compile targets stay clean.
 mac:
