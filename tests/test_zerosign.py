@@ -13,7 +13,9 @@ import sys
 import tempfile
 import zipfile
 
-IS_WINDOWS = os.name == "nt"
+# os.name is "nt" on native Windows; sys.platform also catches the msys/cygwin
+# shells, whose POSIX flavour python would otherwise look like Linux.
+IS_WINDOWS = os.name == "nt" or sys.platform in ("msys", "cygwin")
 BINARY = "zerosign.exe" if IS_WINDOWS else "zerosign"
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ASSETS = os.path.join(ROOT, "tests", "assets")
