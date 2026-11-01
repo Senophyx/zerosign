@@ -54,7 +54,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential pkg-config cmake curl zlib1g-dev
+          sudo apt-get install -y build-essential pkg-config cmake curl patch zlib1g-dev
 
       - name: Restore static dependencies
         id: deps-cache
@@ -102,6 +102,7 @@ jobs:
             perl
             curl
             tar
+            patch
             mingw-w64-ucrt-x86_64-python
             mingw-w64-ucrt-x86_64-gcc
             mingw-w64-ucrt-x86_64-make

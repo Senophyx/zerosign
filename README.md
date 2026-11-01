@@ -255,10 +255,10 @@ Test-Path "$env:USERPROFILE\.zerosign"   # Windows, should print False
 Requirements:
 
 - A C++17 compiler (`clang++` on macOS, `g++` on Linux and Windows).
-- `make`, `pkg-config`, `cmake`, and `curl`.
+- `make`, `pkg-config`, `cmake`, `curl`, and `patch`.
 
 Some libraries are compiled by the build itself, so no package manager version
-of them is used: OpenSSL 3, libzip, and on Linux the whole device stack
+of them is used: OpenSSL 3, libzip, and on Linux and Windows the whole device stack
 (`libplist`, `libimobiledevice-glue`, `libusbmuxd`, `libimobiledevice`). OpenSSL
 is built with the `legacy` provider compiled into `libcrypto.a`, which is what
 lets older `.p12` certificates unlock without an external provider module.
@@ -275,17 +275,16 @@ and ships no static archive for `libplist`, so the build compiles that stack fro
 source instead. No device library has to be installed:
 
 ```bash
-sudo apt install build-essential pkg-config cmake curl zlib1g-dev
+sudo apt install build-essential pkg-config cmake curl patch zlib1g-dev
 ```
 
-On Windows, use an MSYS2 UCRT64 shell (the `libimobiledevice` package is only built for the UCRT64, CLANG64 and CLANGARM64 environments):
+On Windows, use an MSYS2 UCRT64 shell; the device stack is compiled from source there too, so only the toolchain is needed:
 
 ```bash
-pacman -S --needed perl curl tar mingw-w64-ucrt-x86_64-gcc \
+pacman -S --needed perl curl tar patch mingw-w64-ucrt-x86_64-gcc \
     mingw-w64-ucrt-x86_64-make mingw-w64-ucrt-x86_64-pkgconf \
     mingw-w64-ucrt-x86_64-cmake mingw-w64-ucrt-x86_64-ninja \
-    mingw-w64-ucrt-x86_64-libimobiledevice mingw-w64-ucrt-x86_64-libplist \
-    mingw-w64-ucrt-x86_64-libusbmuxd mingw-w64-ucrt-x86_64-zlib
+    mingw-w64-ucrt-x86_64-zlib
 ```
 
 Then build:
