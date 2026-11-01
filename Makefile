@@ -114,10 +114,11 @@ CMAKE_GENERATOR := -G Ninja
 # UCRT64 only: libimobiledevice is packaged for UCRT64, CLANG64 and CLANGARM64,
 # and mixing the MINGW64 archives into a UCRT64 link breaks the link.
 #
-# PKG_PATH keeps the msys2 /d/a/... form on purpose: pkgconf is native but the
-# msys2 runtime converts the whole ':' separated list to Windows paths when it
-# spawns a native binary, so a D:/ form here would be cut at the drive colon.
-PKG_PATH := $(DEPS_ABS)/lib/pkgconfig:/ucrt64/lib/pkgconfig:/ucrt64/share/pkgconfig
+# mingw32-make is a native binary, so $(abspath) already yields D:/a/..., and a
+# ':' separated list starting with a drive letter is cut there by pkgconf. The
+# /d/a/... form has no inner colon and is translated back to D:\ on spawn.
+DEPS_MSYS   := $(shell cygpath -u "$(DEPS_ABS)" 2>/dev/null || echo "$(DEPS_ABS)")
+PKG_PATH    := $(DEPS_MSYS)/lib/pkgconfig:/ucrt64/lib/pkgconfig:/ucrt64/share/pkgconfig
 # Native CMake and the OpenSSL Configure script run under native perl and need
 # the D:/a/... form instead, which both the shell and the tools still accept.
 DEPS_NATIVE := $(shell cygpath -m "$(DEPS_ABS)" 2>/dev/null || echo "$(DEPS_ABS)")
