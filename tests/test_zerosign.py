@@ -242,14 +242,16 @@ def run_main():
                if token in output]
         check("no third-party shared libraries", not bad, "found: %s" % bad)
     else:
-        output = subprocess.run(["ldd", binary_path + ".exe"],
+        output = subprocess.run(["ldd", binary_path],
                                 capture_output=True, text=True).stdout
         if not output.strip():
-            objdump = subprocess.run(["objdump", "-p", binary_path + ".exe"],
+            objdump = subprocess.run(["objdump", "-p", binary_path],
                                      capture_output=True, text=True).stdout
             output = objdump
         check("no toolchain DLLs from ucrt64/mingw64/clang64",
               "/ucrt64/" not in output and "/mingw64/" not in output and "/clang64/" not in output)
+        check("ldd actually inspected the binary", bool(output.strip()),
+              "ldd and objdump both returned nothing")
         dll_lines = [line.split()[-1] for line in output.splitlines()
                      if line.strip().startswith("DLL Name:")
                      or "Name:" in line and ".dll" in line.lower()]
@@ -307,7 +309,7 @@ def run_main():
         ]), result.stdout + result.stderr)
         check("check on real unsigned fixture reports Signed : False" if HAVE_FIXTURES
               else "check on unsigned fixture skipped (no assets)",
-              fields.get("Signed") == "False" or True)
+              not HAVE_FIXTURES or fields.get("Signed") == "False")
         if HAVE_FIXTURES:
             result, fields = check_output(TEST_IPA)
             info = ipa_info_plist(TEST_IPA)
