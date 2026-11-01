@@ -110,10 +110,15 @@ EXTRA_LDFLAGS  :=
 EXTRA_LDLIBS   :=
 # ld64 re-scans an archive until nothing new resolves, so no linker group.
 ARCHIVE_OPEN   :=
+AUTOTOOLS_MAKE :=
 else ifeq ($(HOST),win)
 TARGET   := zerosign.exe
 CXX      := g++
 CMAKE_GENERATOR := -G Ninja
+# Automake's SET_MAKE probes for "make", which the msys2 shells do not provide
+# (only mingw32-make), so the recursive builds have to be told which make to
+# call or they fail with "CreateProcess(NULL, make ...) failed".
+AUTOTOOLS_MAKE := MAKE=mingw32-make
 # UCRT64 only: libimobiledevice is packaged for UCRT64, CLANG64 and CLANGARM64,
 # and mixing the MINGW64 archives into a UCRT64 link breaks the link.
 #
@@ -145,6 +150,7 @@ EXTRA_LDLIBS   := -ldl -lpthread -lm
 # group to be rescanned.
 ARCHIVE_OPEN   := -Wl,--start-group
 ARCHIVE_CLOSE  := -Wl,--end-group
+AUTOTOOLS_MAKE :=
 endif
 
 # Debian and Ubuntu build libimobiledevice against GnuTLS and ship no static
@@ -172,7 +178,7 @@ define build_autotools_deps
 	    export lt_cv_deplibs_check_method=pass_all && \
 	    export PKG_CONFIG_PATH=$(DEPS_MSYS)/lib/pkgconfig && \
 	    ./configure --prefix=$(DEPS_NATIVE) --disable-shared --enable-static \
-	    --disable-dependency-tracking $(3) \
+	    --disable-dependency-tracking $(AUTOTOOLS_MAKE) $(3) \
 	    > $(LOG_DIR)/$(1).log 2>&1 || { echo "configure failed:"; tail -n 40 $(LOG_DIR)/$(1).log; exit 1; }
 	$(MAKE) -C $(DEPS_SRC)/$(basename $(basename $(notdir $(2)))) -j$(JOBS) >> $(LOG_DIR)/$(1).log 2>&1 || { echo "build failed:"; tail -n 40 $(LOG_DIR)/$(1).log; exit 1; }
 	$(MAKE) -C $(DEPS_SRC)/$(basename $(basename $(notdir $(2)))) install >> $(LOG_DIR)/$(1).log 2>&1 || { echo "install failed:"; tail -n 40 $(LOG_DIR)/$(1).log; exit 1; }
