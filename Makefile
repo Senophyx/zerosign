@@ -169,10 +169,12 @@ define build_autotools_deps
 	curl -fsSL $(2) | tar -xj -C $(DEPS_SRC)
 	$(4)
 	cd $(DEPS_SRC)/$(basename $(basename $(notdir $(2)))) && \
-	    lt_cv_deplibs_check_method=pass_all PKG_CONFIG_PATH=$(DEPS_MSYS)/lib/pkgconfig ./configure --prefix=$(DEPS_NATIVE) \
-	    --disable-shared --enable-static $(3) > $(LOG_DIR)/$(1).log 2>&1
-	$(MAKE) -C $(DEPS_SRC)/$(basename $(basename $(notdir $(2)))) -j$(JOBS) >> $(LOG_DIR)/$(1).log 2>&1 || { tail -n 40 $(LOG_DIR)/$(1).log; exit 1; }
-	$(MAKE) -C $(DEPS_SRC)/$(basename $(basename $(notdir $(2)))) install >> $(LOG_DIR)/$(1).log 2>&1
+	    export lt_cv_deplibs_check_method=pass_all && \
+	    export PKG_CONFIG_PATH=$(DEPS_MSYS)/lib/pkgconfig && \
+	    ./configure --prefix=$(DEPS_NATIVE) --disable-shared --enable-static $(3) \
+	    > $(LOG_DIR)/$(1).log 2>&1 || { echo "configure failed:"; tail -n 40 $(LOG_DIR)/$(1).log; exit 1; }
+	$(MAKE) -C $(DEPS_SRC)/$(basename $(basename $(notdir $(2)))) -j$(JOBS) >> $(LOG_DIR)/$(1).log 2>&1 || { echo "build failed:"; tail -n 40 $(LOG_DIR)/$(1).log; exit 1; }
+	$(MAKE) -C $(DEPS_SRC)/$(basename $(basename $(notdir $(2)))) install >> $(LOG_DIR)/$(1).log 2>&1 || { echo "install failed:"; tail -n 40 $(LOG_DIR)/$(1).log; exit 1; }
 	@touch $(DEPS_PREFIX)/.$(1)
 endef
 
@@ -249,7 +251,7 @@ LIBUSBMUXD_STAMP       := $(DEPS_PREFIX)/.libusbmuxd-$(LIBUSBMUXD_VERSION)
 LIBIMOBILEDEVICE_STAMP := $(DEPS_PREFIX)/.libimobiledevice-$(LIBIMOBILEDEVICE_VERSION)
 
 $(LIBPLIST_STAMP):
-	$(call build_autotools_deps,libplist-$(LIBPLIST_VERSION),$(LIBPLIST_URL),--without-cython)
+	$(call build_autotools_deps,libplist-$(LIBPLIST_VERSION),$(LIBPLIST_URL),--without-cython --without-tools --without-tests)
 
 $(LIMD_GLUE_STAMP): $(LIBPLIST_STAMP)
 	$(call build_autotools_deps,libimobiledevice-glue-$(LIMD_GLUE_VERSION),$(LIMD_GLUE_URL),)
