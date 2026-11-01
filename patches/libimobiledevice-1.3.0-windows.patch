@@ -1,0 +1,37 @@
+libimobiledevice 1.3.0: guard the IPv6 scope helper on Windows
+
+common/socket.c compiles _sockaddr_in6_scope_id whenever AF_INET6 is defined.
+MinGW defines AF_INET6, but ifaddrs.h is included only on the non-Windows
+branch, so getifaddrs and struct ifaddrs are undeclared and the file fails to
+compile. The helper is built on POSIX only, and on Windows the call site keeps
+the scope id the caller supplied. libimobiledevice 1.4.0 moved this code into
+libimobiledevice-glue, which removes the Windows path altogether.
+
+--- a/common/socket.c
++++ b/common/socket.c
+@@ -344,6 +344,7 @@
+ 	return scope;
+ }
+ 
++#ifndef WIN32
+ static int32_t _sockaddr_in6_scope_id(struct sockaddr_in6* addr)
+ {
+ 	int32_t res = -1;
+@@ -431,6 +432,7 @@
+ 
+ 	return res;
+ }
++#endif
+ #endif
+ 
+ int socket_connect_addr(struct sockaddr* addr, uint16_t port)
+@@ -470,7 +472,9 @@
+ 		 * a scope id from a suitable interface on this system or routing might
+ 		 * fail. An IPv6 guru should have another look though...
+ 		 */
++#ifndef WIN32
+ 		addr_in->sin6_scope_id = _sockaddr_in6_scope_id(addr_in);
++#endif
+ 
+ 		addrlen = sizeof(struct sockaddr_in6);
+ 	}

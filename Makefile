@@ -191,12 +191,18 @@ define build_autotools_deps
 	@touch $(DEPS_PREFIX)/.$(1)
 endef
 
+# libimobiledevice 1.3.0 does not compile on MinGW: it builds its IPv6 scope
+# helper whenever AF_INET6 is defined, yet includes ifaddrs.h on POSIX only.
+# The patch in patches/ guards that helper; 1.4.0 dropped the code instead.
+IMD_SOCKET_FIXUP := patch -p1 --forward --silent < $(CURDIR)/patches/libimobiledevice-1.3.0-windows.patch
+
 # libimobiledevice 1.3.0 still declares its own plist_format_t, which libplist
 # now ships in plist.h, so the declaration is dropped and the shipped type used.
 # Upstream fixed this by moving the helpers into libimobiledevice-glue.
 IMD_FIXUP := cd $(DEPS_SRC)/libimobiledevice-$(LIBIMOBILEDEVICE_VERSION) && \
 	    sed -i '/^enum plist_format_t {$$/,/^};$$/d' common/utils.h && \
-	    sed -i 's/enum plist_format_t format/plist_format_t format/' common/utils.h common/utils.c
+	    sed -i 's/enum plist_format_t format/plist_format_t format/' common/utils.h common/utils.c && \
+	    $(IMD_SOCKET_FIXUP)
 
 # Kept apart from CXXFLAGS so a value from the environment cannot drop the
 # language standard this project needs.
