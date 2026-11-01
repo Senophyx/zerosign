@@ -202,10 +202,12 @@ IMD_SOCKET_FIXUP := patch -p1 --forward --silent < $(CURDIR)/patches/libimobiled
 # The tools and docs subdirectories are dropped as well: they build a dozen
 # command line binaries that zerosign never uses, and linking them is what
 # pulls in the Windows CryptoAPI symbols through a non-static pkg-config query.
+# Only Makefile.in is edited, never Makefile.am: touching the .am would make it
+# newer than the .in and send make off to regenerate it with automake.
 IMD_FIXUP := cd $(DEPS_SRC)/libimobiledevice-$(LIBIMOBILEDEVICE_VERSION) && \
 	    sed -i '/^enum plist_format_t {$$/,/^};$$/d' common/utils.h && \
 	    sed -i 's/enum plist_format_t format/plist_format_t format/' common/utils.h common/utils.c && \
-	    sed -i 's|^SUBDIRS = common src include $$(CYTHON_SUB) tools docs$$|SUBDIRS = common src include $$(CYTHON_SUB)|' Makefile.in Makefile.am && \
+	    sed -i 's|^SUBDIRS = common src include $$(CYTHON_SUB) tools docs$$|SUBDIRS = common src include $$(CYTHON_SUB)|' Makefile.in && \
 	    $(IMD_SOCKET_FIXUP)
 
 # Kept apart from CXXFLAGS so a value from the environment cannot drop the
