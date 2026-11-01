@@ -23,6 +23,9 @@ DEPS_ABS    := $(abspath $(DEPS_PREFIX))
 # Native Windows tools in the msys2 shell reject the /d/a/... mount form, so
 # the prefix is also kept in D:/a/... form for CMake and pkg-config there.
 DEPS_NATIVE := $(DEPS_ABS)
+# pkg-config needs the opposite: /d/a/... has no inner colon, so a ':' separated
+# list is not cut at the drive letter by the msys2 runtime.
+DEPS_MSYS   := $(DEPS_ABS)
 LOG_DIR     := $(abspath $(BUILD_DIR))
 
 OPENSSL_VERSION          ?= 3.5.9
@@ -123,8 +126,9 @@ PKG_PATH    := $(DEPS_MSYS)/lib/pkgconfig:/ucrt64/lib/pkgconfig:/ucrt64/share/pk
 # the D:/a/... form instead, which both the shell and the tools still accept.
 DEPS_NATIVE := $(shell cygpath -m "$(DEPS_ABS)" 2>/dev/null || echo "$(DEPS_ABS)")
 # The static archives carry no __declspec(dllimport) stubs. gcc here is native,
-# so its -I path uses the D:/a/... form.
-EXTRA_CXXFLAGS := -I$(DEPS_NATIVE)/include -DLIBIMOBILEDEVICE_STATIC -DLIBUSBMUXD_STATIC -DLIBPLIST_STATIC -DZIP_STATIC
+# so its -I path uses the D:/a/... form. ZIP_STATIC is left out on purpose:
+# the libzip we build writes it into zipconf.h already.
+EXTRA_CXXFLAGS := -I$(DEPS_NATIVE)/include -DLIBIMOBILEDEVICE_STATIC -DLIBUSBMUXD_STATIC -DLIBPLIST_STATIC
 EXTRA_LDFLAGS  := -static -static-libgcc -static-libstdc++
 EXTRA_LDLIBS   := -lws2_32 -lcrypt32 -liphlpapi -lbcrypt -lgdi32 -luserenv -ladvapi32 -lole32
 ARCHIVE_OPEN   := -Wl,--start-group
@@ -148,7 +152,11 @@ endif
 # OpenSSL built below. macOS and Windows take the packaged archives, which are
 # already OpenSSL based and already static.
 DEPS_TARGETS := $(DEPS_PREFIX)/.openssl-$(OPENSSL_VERSION) $(DEPS_PREFIX)/.libzip-$(LIBZIP_VERSION)
-ifeq ($(HOST),linux)
+# The whole device stack is compiled here on Windows and Linux: the packaged
+# MSYS2 archives are built for DLL import (they reference __imp_* symbols) and
+# carry no static libraries for plist/usbmuxd, so linking them statically fails.
+# macOS takes the Homebrew archives, which are built for static linking.
+ifeq ($(filter $(HOST),linux win),$(HOST))
 DEPS_TARGETS += $(DEPS_PREFIX)/.libimobiledevice-$(LIBIMOBILEDEVICE_VERSION)
 endif
 
@@ -161,7 +169,7 @@ define build_autotools_deps
 	curl -fsSL $(2) | tar -xj -C $(DEPS_SRC)
 	$(4)
 	cd $(DEPS_SRC)/$(basename $(basename $(notdir $(2)))) && \
-	    PKG_CONFIG_PATH=$(DEPS_ABS)/lib/pkgconfig ./configure --prefix=$(DEPS_ABS) \
+	    lt_cv_deplibs_check_method=pass_all PKG_CONFIG_PATH=$(DEPS_MSYS)/lib/pkgconfig ./configure --prefix=$(DEPS_NATIVE) \
 	    --disable-shared --enable-static $(3) > $(LOG_DIR)/$(1).log 2>&1
 	$(MAKE) -C $(DEPS_SRC)/$(basename $(basename $(notdir $(2)))) -j$(JOBS) >> $(LOG_DIR)/$(1).log 2>&1 || { tail -n 40 $(LOG_DIR)/$(1).log; exit 1; }
 	$(MAKE) -C $(DEPS_SRC)/$(basename $(basename $(notdir $(2)))) install >> $(LOG_DIR)/$(1).log 2>&1
@@ -192,7 +200,7 @@ $(TARGET): $(SOURCES) $(DEPS_STAMP)
 	set -e; \
 	cflags=$$(pkg-config --cflags $(PKGS)); \
 	libs=$$(pkg-config --static --libs $(PKGS)); \
-	dirs="$(DEPS_NATIVE)/lib"; \
+	dirs="$(DEPS_MSYS)/lib"; \
 	for p in $(PKGS); do dirs="$$dirs $$(pkg-config --variable=libdir $$p)"; done; \
 	archives=""; \
 	for tok in $$libs; do \

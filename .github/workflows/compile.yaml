@@ -91,9 +91,6 @@ jobs:
             mingw-w64-ucrt-x86_64-pkgconf
             mingw-w64-ucrt-x86_64-cmake
             mingw-w64-ucrt-x86_64-ninja
-            mingw-w64-ucrt-x86_64-libimobiledevice
-            mingw-w64-ucrt-x86_64-libplist
-            mingw-w64-ucrt-x86_64-libusbmuxd
             mingw-w64-ucrt-x86_64-zlib
 
       - name: Build
