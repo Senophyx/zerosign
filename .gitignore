@@ -72,3 +72,6 @@ vcpkg_installed/
 Testing/
 .cache/
 *__test*
+
+# private test fixtures (certificates, profiles, .ipa files)
+/tests/assets/

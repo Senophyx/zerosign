@@ -172,7 +172,7 @@ IMD_FIXUP := cd $(DEPS_SRC)/libimobiledevice-$(LIBIMOBILEDEVICE_VERSION) && \
 CXXSTD   ?= -std=c++17
 CXXFLAGS ?= -O2 -Wall -Wextra -Wno-unused-parameter
 
-.PHONY: all compile mac linux win deps clean
+.PHONY: all compile mac linux win deps clean test
 
 all: $(TARGET)
 
@@ -253,6 +253,9 @@ linux:
 
 win:
 	@:
+
+test: $(TARGET)
+	python3 tests/test_zerosign.py
 
 clean:
 	rm -rf $(TARGET) zerosign zerosign.exe *.o $(BUILD_DIR)

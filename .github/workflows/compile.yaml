@@ -17,7 +17,9 @@ jobs:
         run: make compile mac
 
       - name: Verify
-        run: ./zerosign --version
+        run: |
+          ./zerosign --version
+          python3 tests/test_zerosign.py
 
       - name: Verify zero dependencies
         run: |
@@ -48,7 +50,9 @@ jobs:
         run: make compile linux
 
       - name: Verify
-        run: ./zerosign --version
+        run: |
+          ./zerosign --version
+          python3 tests/test_zerosign.py
 
       - name: Verify zero dependencies
         run: |
@@ -95,7 +99,9 @@ jobs:
         run: mingw32-make compile win
 
       - name: Verify
-        run: ./zerosign.exe --version
+        run: |
+          ./zerosign.exe --version
+          python3 tests/test_zerosign.py
 
       - name: Verify zero dependencies
         run: |

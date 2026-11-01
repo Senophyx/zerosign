@@ -19,8 +19,8 @@ jobs:
       - name: Build
         run: make compile mac
 
-      - name: Run zerosign
-        run: ./zerosign --version
+      - name: Test
+        run: python3 tests/test_zerosign.py
 
   check-linux:
     name: Linux
@@ -36,8 +36,8 @@ jobs:
       - name: Build
         run: make compile linux
 
-      - name: Run zerosign
-        run: ./zerosign --version
+      - name: Test
+        run: python3 tests/test_zerosign.py
 
   check-windows:
     name: Windows
@@ -65,5 +65,5 @@ jobs:
       - name: Build
         run: mingw32-make compile win
 
-      - name: Run zerosign
-        run: ./zerosign.exe --version
+      - name: Test
+        run: python3 tests/test_zerosign.py
