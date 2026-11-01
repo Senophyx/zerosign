@@ -16,9 +16,25 @@ jobs:
       - name: Install dependencies
         run: brew install libimobiledevice libplist pkg-config cmake
 
-      - name: Cache static dependencies
-        id: cache-deps
-        uses: actions/cache@v4
+      - name: Restore static dependencies
+        id: deps-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: build/prefix
+          key: deps-${{ runner.os }}-${{ hashFiles('Makefile') }}
+          # A Makefile edit must not throw away a working OpenSSL build, so the
+          # newest cache for this OS is restored and make fills in the rest.
+          restore-keys: |
+            deps-${{ runner.os }}-
+
+      - name: Build static dependencies
+        run: make deps
+
+      # Saved even when the build fails, because make leaves a stamp for every
+      # library it finished, so a partial prefix still skips those next time.
+      - name: Save static dependencies
+        if: always() && steps.deps-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
         with:
           path: build/prefix
           key: deps-${{ runner.os }}-${{ hashFiles('Makefile') }}
@@ -40,9 +56,25 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y build-essential pkg-config cmake curl zlib1g-dev
 
-      - name: Cache static dependencies
-        id: cache-deps
-        uses: actions/cache@v4
+      - name: Restore static dependencies
+        id: deps-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: build/prefix
+          key: deps-${{ runner.os }}-${{ hashFiles('Makefile') }}
+          # A Makefile edit must not throw away a working OpenSSL build, so the
+          # newest cache for this OS is restored and make fills in the rest.
+          restore-keys: |
+            deps-${{ runner.os }}-
+
+      - name: Build static dependencies
+        run: make deps
+
+      # Saved even when the build fails, because make leaves a stamp for every
+      # library it finished, so a partial prefix still skips those next time.
+      - name: Save static dependencies
+        if: always() && steps.deps-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
         with:
           path: build/prefix
           key: deps-${{ runner.os }}-${{ hashFiles('Makefile') }}
@@ -78,9 +110,25 @@ jobs:
             mingw-w64-ucrt-x86_64-ninja
             mingw-w64-ucrt-x86_64-zlib
 
-      - name: Cache static dependencies
-        id: cache-deps
-        uses: actions/cache@v4
+      - name: Restore static dependencies
+        id: deps-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: build/prefix
+          key: deps-${{ runner.os }}-${{ hashFiles('Makefile') }}
+          # A Makefile edit must not throw away a working OpenSSL build, so the
+          # newest cache for this OS is restored and make fills in the rest.
+          restore-keys: |
+            deps-${{ runner.os }}-
+
+      - name: Build static dependencies
+        run: mingw32-make deps
+
+      # Saved even when the build fails, because make leaves a stamp for every
+      # library it finished, so a partial prefix still skips those next time.
+      - name: Save static dependencies
+        if: always() && steps.deps-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
         with:
           path: build/prefix
           key: deps-${{ runner.os }}-${{ hashFiles('Makefile') }}
