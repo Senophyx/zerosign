@@ -323,6 +323,6 @@ Special thanks to the creators and contributors of the following projects, which
 
 ## License
 ```
-This Project under MIT License
+This project is licensed under the MIT License.
 Copyright (c) 2026 Senophyx
 ```
