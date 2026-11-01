@@ -108,6 +108,8 @@ PKG_PATH := $(DEPS_ABS)/lib/pkgconfig:$(BREW_PREFIX)/lib/pkgconfig:$(BREW_PREFIX
 EXTRA_CXXFLAGS := -I$(DEPS_ABS)/include
 EXTRA_LDFLAGS  :=
 EXTRA_LDLIBS   :=
+# Only Windows needs the dllimport suppression macros.
+STATIC_DEFINES :=
 # ld64 re-scans an archive until nothing new resolves, so no linker group.
 ARCHIVE_OPEN   :=
 AUTOTOOLS_MAKE :=
@@ -133,7 +135,8 @@ DEPS_NATIVE := $(shell cygpath -m "$(DEPS_ABS)" 2>/dev/null || echo "$(DEPS_ABS)
 # The static archives carry no __declspec(dllimport) stubs. gcc here is native,
 # so its -I path uses the D:/a/... form. ZIP_STATIC is left out on purpose:
 # the libzip we build writes it into zipconf.h already.
-EXTRA_CXXFLAGS := -I$(DEPS_NATIVE)/include -DLIBIMOBILEDEVICE_STATIC -DLIBUSBMUXD_STATIC -DLIBPLIST_STATIC
+STATIC_DEFINES := -DLIBIMOBILEDEVICE_STATIC -DLIBUSBMUXD_STATIC -DLIBPLIST_STATIC -DLIMD_GLUE_STATIC
+EXTRA_CXXFLAGS := -I$(DEPS_NATIVE)/include $(STATIC_DEFINES)
 EXTRA_LDFLAGS  := -static -static-libgcc -static-libstdc++
 EXTRA_LDLIBS   := -lws2_32 -lcrypt32 -liphlpapi -lbcrypt -lgdi32 -luserenv -ladvapi32 -lole32
 ARCHIVE_OPEN   := -Wl,--start-group
@@ -144,6 +147,7 @@ CXX      := g++
 CMAKE_GENERATOR :=
 PKG_PATH := $(DEPS_ABS)/lib/pkgconfig:/usr/local/lib/pkgconfig:/usr/lib/x86_64-linux-gnu/pkgconfig:/usr/lib/aarch64-linux-gnu/pkgconfig:/usr/lib/pkgconfig:/usr/share/pkgconfig
 EXTRA_CXXFLAGS := -I$(DEPS_ABS)/include
+STATIC_DEFINES :=
 EXTRA_LDFLAGS  := -static-libgcc -static-libstdc++
 EXTRA_LDLIBS   := -ldl -lpthread -lm
 # GNU ld walks the link line once, so archives that reference each other need a
@@ -177,6 +181,8 @@ define build_autotools_deps
 	cd $(DEPS_SRC)/$(basename $(basename $(notdir $(2)))) && \
 	    export lt_cv_deplibs_check_method=pass_all && \
 	    export PKG_CONFIG_PATH=$(DEPS_MSYS)/lib/pkgconfig && \
+	    export CFLAGS="-O2 $(STATIC_DEFINES) $$CFLAGS" && \
+	    export CXXFLAGS="-O2 $(STATIC_DEFINES) $$CXXFLAGS" && \
 	    ./configure --prefix=$(DEPS_NATIVE) --disable-shared --enable-static \
 	    --disable-dependency-tracking $(AUTOTOOLS_MAKE) $(3) \
 	    > $(LOG_DIR)/$(1).log 2>&1 || { echo "configure failed:"; tail -n 40 $(LOG_DIR)/$(1).log; exit 1; }
