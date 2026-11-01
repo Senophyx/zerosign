@@ -20,8 +20,8 @@ BINARY = "zerosign.exe" if IS_WINDOWS else "zerosign"
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ASSETS = os.path.join(ROOT, "tests", "assets")
 TEST_IPA = os.path.join(ASSETS, "test.ipa")
-TEST_P12 = os.path.join(ASSETS, "main.p12")
-TEST_PROV = os.path.join(ASSETS, "main.mobileprovision")
+TEST_P12 = os.path.join(ASSETS, "test.p12")
+TEST_PROV = os.path.join(ASSETS, "test.mobileprovision")
 HAVE_FIXTURES = all(os.path.isfile(p) for p in (TEST_IPA, TEST_P12, TEST_PROV))
 
 passed = 0
@@ -260,8 +260,8 @@ def run_main():
         print("  note  linked DLLs: %s" % dll_lines)
 
     if not HAVE_FIXTURES:
-        print("\n  note  tests/assets fixtures (test.ipa, main.p12, main.mobileprovision) are"
-              " absent; skipping certificate and real-IPA signing checks.")
+        print("\n  note  tests/assets fixtures (ipa and certs) are missing, skipping"
+              " certificate and real-IPA signing checks.")
 
     # -----------------------------------------------------------------------
     section("Stage 3: CLI & help/version workflows")
@@ -412,37 +412,37 @@ def run_main():
               and "zerosign cert" in result.stdout + result.stderr,
               result.stdout + result.stderr)
 
-        stdin = "%s\n%s\n1\nmain\n" % (TEST_P12, TEST_PROV)
+        stdin = "%s\n%s\n1\ntest\n" % (TEST_P12, TEST_PROV)
         result = run(["cert"], stdin_text=stdin, env=env)
         check("cert interactive flow succeeds",
               result.returncode == 0 and "Success! Saved to ~/.zerosign/" in result.stdout,
               result.stdout + result.stderr)
         check("saved certificate files created",
               os.path.isfile(os.path.join(zerosign_dir, "zerosign.json"))
-              and os.path.isfile(os.path.join(zerosign_dir, "main.p12"))
-              and os.path.isfile(os.path.join(zerosign_dir, "main.mobileprovision")))
+              and os.path.isfile(os.path.join(zerosign_dir, "test.p12"))
+              and os.path.isfile(os.path.join(zerosign_dir, "test.mobileprovision")))
         saved = json.load(open(os.path.join(zerosign_dir, "zerosign.json")))
-        check("zerosign.json is valid JSON with name main",
-              saved.get("certificate", {}).get("name") == "main")
+        check("zerosign.json is valid JSON with name test",
+              saved.get("certificate", {}).get("name") == "test")
 
         result = run(["sign", app_ipa], cwd=workdir, env=env)
         saved_output = os.path.join(workdir, "app-signed.ipa")
         check("flagless sign uses the saved certificate",
               result.returncode == 0
-              and 'Signing using "main" certificate...' in result.stdout
+              and 'Signing using "test" certificate...' in result.stdout
               and "Successfully signed" in result.stdout,
               result.stdout + result.stderr)
         result, fields = check_output(saved_output, workdir)
         check("flagless-signed ipa reports Signed : True", fields.get("Signed") == "True")
 
-        before = os.path.getmtime(os.path.join(zerosign_dir, "main.p12"))
+        before = os.path.getmtime(os.path.join(zerosign_dir, "test.p12"))
         result = run(["cert"], stdin_text="n\n", env=env)
         check("cert replacement declined keeps the certificate",
               result.returncode == 0
               and 'do you want to replace it? (y/n)' in result.stdout
-              and not any(name.endswith(".p12") and name != "main.p12"
+              and not any(name.endswith(".p12") and name != "test.p12"
                           for name in os.listdir(zerosign_dir))
-              and os.path.getmtime(os.path.join(zerosign_dir, "main.p12")) == before,
+              and os.path.getmtime(os.path.join(zerosign_dir, "test.p12")) == before,
               result.stdout + result.stderr)
 
         stdin = "y\n%s\n%s\n1\n\n" % (TEST_P12, TEST_PROV)
@@ -450,13 +450,13 @@ def run_main():
         saved = json.load(open(os.path.join(zerosign_dir, "zerosign.json")))
         random_name = saved.get("certificate", {}).get("name")
         check("cert replacement with blank name uses a random identifier",
-              result.returncode == 0 and random_name is not None and random_name != "main"
+              result.returncode == 0 and random_name is not None and random_name != "test"
               and os.path.isfile(os.path.join(zerosign_dir, random_name + ".p12"))
               and os.path.isfile(os.path.join(zerosign_dir, random_name + ".mobileprovision")),
               result.stdout + result.stderr)
-        check("old main certificate files cleaned up",
-              not os.path.exists(os.path.join(zerosign_dir, "main.p12"))
-              and not os.path.exists(os.path.join(zerosign_dir, "main.mobileprovision")))
+        check("old test certificate files cleaned up",
+              not os.path.exists(os.path.join(zerosign_dir, "test.p12"))
+              and not os.path.exists(os.path.join(zerosign_dir, "test.mobileprovision")))
         result = run(["sign", app_ipa], cwd=workdir, env=env)
         check("flagless sign works after replacement",
               result.returncode == 0
