@@ -183,6 +183,7 @@ define build_autotools_deps
 	    export PKG_CONFIG_PATH=$(DEPS_MSYS)/lib/pkgconfig && \
 	    export CFLAGS="-O2 $(STATIC_DEFINES) $$CFLAGS" && \
 	    export CXXFLAGS="-O2 $(STATIC_DEFINES) $$CXXFLAGS" && \
+	    export LIBS="$(EXTRA_LDLIBS) $$LIBS" && \
 	    ./configure --prefix=$(DEPS_NATIVE) --disable-shared --enable-static \
 	    --disable-dependency-tracking $(AUTOTOOLS_MAKE) $(3) \
 	    > $(LOG_DIR)/$(1).log 2>&1 || { echo "configure failed:"; tail -n 40 $(LOG_DIR)/$(1).log; exit 1; }
@@ -198,10 +199,13 @@ IMD_SOCKET_FIXUP := patch -p1 --forward --silent < $(CURDIR)/patches/libimobiled
 
 # libimobiledevice 1.3.0 still declares its own plist_format_t, which libplist
 # now ships in plist.h, so the declaration is dropped and the shipped type used.
-# Upstream fixed this by moving the helpers into libimobiledevice-glue.
+# The tools and docs subdirectories are dropped as well: they build a dozen
+# command line binaries that zerosign never uses, and linking them is what
+# pulls in the Windows CryptoAPI symbols through a non-static pkg-config query.
 IMD_FIXUP := cd $(DEPS_SRC)/libimobiledevice-$(LIBIMOBILEDEVICE_VERSION) && \
 	    sed -i '/^enum plist_format_t {$$/,/^};$$/d' common/utils.h && \
 	    sed -i 's/enum plist_format_t format/plist_format_t format/' common/utils.h common/utils.c && \
+	    sed -i 's|^SUBDIRS = common src include $$(CYTHON_SUB) tools docs$$|SUBDIRS = common src include $$(CYTHON_SUB)|' Makefile.in Makefile.am && \
 	    $(IMD_SOCKET_FIXUP)
 
 # Kept apart from CXXFLAGS so a value from the environment cannot drop the
