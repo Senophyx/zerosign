@@ -1,4 +1,4 @@
-name: Check
+name: CI
 
 on:
   push:
@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  check-macos:
+  build-macos:
     name: macOS
     runs-on: macos-latest
     steps:
@@ -22,16 +22,12 @@ jobs:
         with:
           path: build/prefix
           key: deps-${{ runner.os }}-${{ hashFiles('Makefile') }}
-          # A Makefile edit must not throw away a working OpenSSL build, so the
-          # newest cache for this OS is restored and make fills in the rest.
           restore-keys: |
             deps-${{ runner.os }}-
 
       - name: Build static dependencies
         run: make deps
 
-      # Saved even when the build fails, because make leaves a stamp for every
-      # library it finished, so a partial prefix still skips those next time.
       - name: Save static dependencies
         if: always() && steps.deps-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
@@ -45,7 +41,14 @@ jobs:
       - name: Test
         run: python3 tests/test_zerosign.py
 
-  check-linux:
+      - name: Upload artifact
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: zerosign-macos
+          path: ./zerosign
+
+  build-linux:
     name: Linux
     runs-on: ubuntu-latest
     steps:
@@ -62,16 +65,12 @@ jobs:
         with:
           path: build/prefix
           key: deps-${{ runner.os }}-${{ hashFiles('Makefile') }}
-          # A Makefile edit must not throw away a working OpenSSL build, so the
-          # newest cache for this OS is restored and make fills in the rest.
           restore-keys: |
             deps-${{ runner.os }}-
 
       - name: Build static dependencies
         run: make deps
 
-      # Saved even when the build fails, because make leaves a stamp for every
-      # library it finished, so a partial prefix still skips those next time.
       - name: Save static dependencies
         if: always() && steps.deps-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
@@ -85,7 +84,14 @@ jobs:
       - name: Test
         run: python3 tests/test_zerosign.py
 
-  check-windows:
+      - name: Upload artifact
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: zerosign-linux
+          path: ./zerosign
+
+  build-windows:
     name: Windows
     runs-on: windows-latest
     defaults:
@@ -117,16 +123,12 @@ jobs:
         with:
           path: build/prefix
           key: deps-${{ runner.os }}-${{ hashFiles('Makefile') }}
-          # A Makefile edit must not throw away a working OpenSSL build, so the
-          # newest cache for this OS is restored and make fills in the rest.
           restore-keys: |
             deps-${{ runner.os }}-
 
       - name: Build static dependencies
         run: mingw32-make deps
 
-      # Saved even when the build fails, because make leaves a stamp for every
-      # library it finished, so a partial prefix still skips those next time.
       - name: Save static dependencies
         if: always() && steps.deps-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
@@ -139,3 +141,10 @@ jobs:
 
       - name: Test
         run: python3 tests/test_zerosign.py
+
+      - name: Upload artifact
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: zerosign-windows
+          path: ./zerosign.exe
